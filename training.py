@@ -27,7 +27,7 @@ def train_network(network_model, render_mode='rgb_array'):
             observation, reward, done, info, dis = env.step(action)
             state_vector = create_state_vector(observation)
             y_batch = reward + c.GAMMA * torch.max(nn.Softmax(network_model.forward(state_vector)))
-            y_pred = nn.Softmax(network_model.forward(state_vector))
+            y_pred = nn.functional.softmax(network_model.forward(state_vector))
             loss = nn.MSELoss(y_pred, y_batch)
             loss.backward()
             o.optimizer.step()
