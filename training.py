@@ -1,6 +1,6 @@
 import time
+from collections import deque
 import torch
-from torch import nn
 from gym_examples.envs.grid_world import GridWorldEnv
 from gym_examples.wrappers import RelativePosition
 import gym
@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import config as c
 import optimization as o
+import models as m
 
 
 def train_network(network_model, render_mode='rgb_array'):
@@ -16,24 +17,29 @@ def train_network(network_model, render_mode='rgb_array'):
     # batch_size = len(batch_data)
     env = gym.make('gym_examples/GridWorld-v0', render_mode=render_mode)
     # env = gym.make('Pong-v0')
-    wrapped_env = RelativePosition(env)
+    # wrapped_env = RelativePosition(env)
+    replay_memory = deque([], maxlen=c.CAPACITY)
+    model_optimizer = o.NetworkOptimizer(network_model)
     for epoch in range(c.EPOCHS):
         env.reset()
         env.close()
-        for i in range(30):
+        obs, info = env.reset()
+        print(epoch)
+        for i in range(100):
             env.render()
             time.sleep(0.1)
             action = env.action_space.sample()
-            observation, reward, done, info, dis = env.step(action)
-            state_vector = create_state_vector(observation)
-            y_batch = reward + c.GAMMA * torch.max(nn.Softmax(network_model.forward(state_vector)))
-            y_pred = nn.functional.softmax(network_model.forward(state_vector))
-            loss = nn.MSELoss(y_pred, y_batch)
-            loss.backward()
-            o.optimizer.step()
+            next_obs, reward, done, info, dis = env.step(action)
+            state = create_state_vector(obs)
+            next_state = create_state_vector(next_obs)
+            replay_memory.append(o.Transition(state, action, next_state, reward))
+            state = next_state
+            if i == 1:
+                model_optimizer.optimization_step(replay_memory)
             if done:
                 print("Episode finished after {} timesteps".format(i+1))
-            break
+                break
+    return network_model
 
 def create_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for NN.'''
