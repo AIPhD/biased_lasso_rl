@@ -1,4 +1,5 @@
 from collections import namedtuple
+import random
 import torch
 from torch import  optim
 from torch import nn
@@ -19,14 +20,18 @@ class NetworkOptimizer():
 
     def optimization_step(self, memory_sample):
         '''Calculates loss gradient and performs update on NN.'''
-        batch = Transition(*zip(*memory_sample))
-        state_batch = torch.cat(batch.state)
-        action_batch = torch.tensor(batch.action)
-        next_state_batch = torch.cat(batch.next_state)
+        if len(memory_sample) < c.BATCH_SIZE:
+            return
+        transition_sample = random.sample(memory_sample, c.BATCH_SIZE)
+        batch = Transition(*zip(*transition_sample))
+        state_batch = torch.stack(batch.state)
+        action_batch = torch.tensor(batch.action)[:, None]
+        next_state_batch = torch.stack(batch.next_state)
         reward_batch = torch.tensor(batch.reward)
-        q_output = self.network_model(state_batch)
-        y_batch = reward_batch + c.GAMMA * torch.max(nn.Softmax(self.network_model(next_state_batch)),
-                                                     0).values
-        loss = nn.MSELoss(y_batch, q_output)
-        loss.backward()
+        q_output = self.network_model(state_batch).gather(1, action_batch).flatten()
+        y_batch = reward_batch + c.GAMMA * torch.max(self.network_model(next_state_batch),
+                                                     1).values
+        loss = nn.MSELoss()
+        loss_output = loss(y_batch, q_output)
+        loss_output.backward()
         self.optimizer.step()
