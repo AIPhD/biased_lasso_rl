@@ -11,8 +11,9 @@ import training as t
 
 def main():
     '''Main function of the RL setting.'''
-    q_network = m.ConvQNetwork().to(c.DEVICE)
-    t.train_network(q_network)
+    q_network = m.ConvNetwork().to(c.DEVICE)
+    target_network = m.ConvNetwork().to(c.DEVICE)
+    t.train_network(q_network, target_network)
 
 if __name__ == '__main__':
     main()
