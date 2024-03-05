@@ -37,9 +37,9 @@ class NetworkOptimizer():
         for mem_batch in mem_batches:
             batch = Transition(*zip(*mem_batch))
             state_batch = torch.stack(batch.state)
-            action_batch = torch.tensor(batch.action)[:, None]
+            action_batch = torch.tensor(batch.action).to(c.DEVICE)[:, None]
             next_state_batch = torch.stack(batch.next_state)
-            reward_batch = torch.tensor(batch.reward)
+            reward_batch = torch.tensor(batch.reward).to(c.DEVICE)
             q_output = self.network_model(state_batch).gather(1, action_batch).flatten()
             with torch.no_grad():
                 target_batch = reward_batch + c.GAMMA * torch.max(target_net(next_state_batch),

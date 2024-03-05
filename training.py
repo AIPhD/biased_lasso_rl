@@ -56,7 +56,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
 
 def create_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for NN.'''
-    state_vector = torch.zeros(5,5,2)
+    state_vector = torch.zeros(5,5,2).to(c.DEVICE)
     state_vector[observation['agent'][0], observation['agent'][1], 0] = 1
     state_vector[observation['target'][0], observation['target'][1], 1] = 1
     return torch.flatten(state_vector)
@@ -66,5 +66,5 @@ def select_action(network_output):
     '''Calculate, which action to take, with best estimated chance.'''
     prob_action = torch.nn.functional.softmax(network_output, dim=0)
     # print(prob_action)
-    action = np.random.choice(np.arange(4), p=prob_action.detach().numpy())
+    action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
     return action
