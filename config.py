@@ -18,4 +18,4 @@ CAPACITY = 300
 BATCH_SIZE = 100
 UPDATE_TARGET = 50
 RENDER = 'human' # 'rgb_array'
- # use command DISPLAY=$(grep nameserver /etc/resolv.conf | awk '{print $2}'):0.0 when looking for virtual display output
+ # use command DISPLAY=$(grep nameserver /etc/resolv.conf | awk '{print $2}'):0.0 when looking for virtual display output in WSL2 or copy in bashrc file
