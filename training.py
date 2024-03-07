@@ -22,43 +22,69 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
     for epoch in range(c.EPOCHS):
         obs, info = env.reset()
         # env.close()
-        state = create_state_vector(obs)
+
+        if c.FCMODEL:
+            state = create_fc_state_vector(obs)
+        else:
+            state = create_conv_state_vector(obs)
+
         print(epoch)
         accumulated_reward = 0
         for i in range(c.EPISODES):
             target_update_counter += 1
             env.render()
-            time.sleep(0.1)
+            # time.sleep(0.1)
             # action = env.action_space.sample()
             action = select_action(network_model(state))
             next_obs, reward, done, info, dis = env.step(action)
             accumulated_reward += reward
-            state = create_state_vector(obs)
-            next_state = create_state_vector(next_obs)
-            replay_memory.append(o.Transition(state[0], action, next_state[0], reward))
+
+            if c.FCMODEL:
+                state = create_fc_state_vector(obs)
+                next_state = create_fc_state_vector(next_obs)
+                replay_memory.append(o.Transition(state, action, next_state, reward))
+            else:
+                state = create_conv_state_vector(obs)
+                next_state = create_conv_state_vector(next_obs)
+                replay_memory.append(o.Transition(state[0], action, next_state[0], reward))
+
             state = next_state
-            if done:
-                print("Episode finished after {} timesteps".format(i+1))
-                break
             n_segments = int(len(replay_memory)/c.BATCH_SIZE)
+
             if len(replay_memory) >= c.BATCH_SIZE:
                 o.optimization_step(network_model, target_net, replay_memory, n_segments)
+
                 if target_update_counter == c.UPDATE_TARGET:
                     for key in target_net.state_dict():
                         target_net.state_dict()[key] = network_model.state_dict()[key]
+
                     target_update_counter = 0
+
+            if done:
+                print("Episode finished after {} timesteps".format(i+1))
+                break
+
         print(accumulated_reward)
     return network_model
 
 
-def create_state_vector(observation, fcmodel=c.FCMODEL):
-    '''Convert Observation output from environmnet into a state variable for NN.'''
+def create_fc_state_vector(observation):
+    '''Convert Observation output from environmnet into a state variable for regular NN.'''
+
+    state_vector = torch.zeros(2, 8, 8).to(c.DEVICE)
+    state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
+    state_vector[1, observation['target'][0], observation['target'][1]] = 1
+    state_vector = torch.flatten(state_vector)
+
+    return state_vector
+
+
+def create_conv_state_vector(observation):
+    '''Convert Observation output from environmnet into a state variable for convolutional NN.'''
+
     state_vector = torch.zeros(1, 2, 8, 8).to(c.DEVICE)
     state_vector[0, 0, observation['agent'][0], observation['agent'][1]] = 1
     state_vector[0, 1, observation['target'][0], observation['target'][1]] = 1
-
-    if fcmodel:
-        state_vector = torch.flatten(state_vector)
 
     return state_vector
 

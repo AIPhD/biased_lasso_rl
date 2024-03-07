@@ -10,11 +10,11 @@ class FullConnectedNetwork(nn.Module):
     def __init__(self):
 
         super().__init__()
-        self.stacked_layers = nn.Sequential(nn.Linear(c.INPUT, 25),
+        self.stacked_layers = nn.Sequential(nn.Linear(c.INPUT, 66),
                                             nn.ReLU(),
-                                            nn.Linear(25,25),
-                                            nn.ReLU(),
-                                            nn.Linear(25, c.OUTPUT))
+                                            # nn.Linear(256,64),
+                                            # nn.ReLU(),
+                                            nn.Linear(66, c.OUTPUT))
         self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
 
     def forward(self, x_input):
@@ -29,17 +29,17 @@ class ConvNetwork(nn.Module):
     def __init__(self):
 
         super().__init__()
-        self.stacked_layers = nn.Sequential(nn.Conv2d(2, 2, kernel_size=(3, 3)),
-                                            nn.AvgPool2d(kernel_size=2),
+        self.stacked_layers = nn.Sequential(nn.Conv2d(2, 4, kernel_size=(3, 3)),
+                                            nn.MaxPool2d(kernel_size=2),
                                             # nn.Conv2d(3, 3, kernel_size=(2, 2)),
                                             # nn.AvgPool2d(kernel_size=2),
                                             nn.ReLU(),
                                             nn.Flatten(start_dim=1),
-                                            nn.Linear(18, 36),
+                                            nn.Linear(36, 20),
                                             nn.ReLU(),
-                                            nn.Linear(36, 12),
-                                            nn.ReLU(),
-                                            nn.Linear(12, c.OUTPUT))
+                                            # nn.Linear(36, 12),
+                                            # nn.ReLU(),
+                                            nn.Linear(20, c.OUTPUT))
         self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
 
     def forward(self, x_input):
