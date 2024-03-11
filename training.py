@@ -19,6 +19,8 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
     # wrapped_env = RelativePosition(env)
     replay_memory = deque([], maxlen=c.CAPACITY)
     target_update_counter = 0
+    exploration_counter = 0
+    eps_decline_counter = 0
     for epoch in range(c.EPOCHS):
         obs, info = env.reset()
         # env.close()
@@ -28,14 +30,15 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
         else:
             state = create_conv_state_vector(obs)
 
-        print(epoch)
+        print(f"{epoch} epochs done.")
         accumulated_reward = 0
         for i in range(c.EPISODES):
-            target_update_counter += 1
             env.render()
             # time.sleep(0.1)
             # action = env.action_space.sample()
-            action = select_action(network_model(state))
+            epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.1)
+            exploration_counter += 1
+            action = select_action(network_model(state), epsilon)
             next_obs, reward, done, info, dis = env.step(action)
             accumulated_reward += reward
 
@@ -51,7 +54,9 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
             state = next_state
             n_segments = int(len(replay_memory)/c.BATCH_SIZE)
 
-            if len(replay_memory) >= c.BATCH_SIZE:
+            if exploration_counter >= c.EXPLORATION:
+                eps_decline_counter += 1
+                target_update_counter += 1
                 o.optimization_step(network_model, target_net, replay_memory, n_segments)
 
                 if target_update_counter == c.UPDATE_TARGET:
@@ -61,10 +66,11 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
                     target_update_counter = 0
 
             if done:
-                print("Episode finished after {} timesteps".format(i+1))
+                print(f"Episode finished after {i+1} timesteps.")
                 break
 
-        print(accumulated_reward)
+        print(f'epsilon = {epsilon}')
+        print(f'Accumulated a total reward of {accumulated_reward}.')
     return network_model
 
 
@@ -89,9 +95,15 @@ def create_conv_state_vector(observation):
     return state_vector
 
 
-def select_action(network_output):
+def select_action(network_output, epsilon):
     '''Calculate, which action to take, with best estimated chance.'''
-    prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
-    # print(prob_action)
-    action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
+
+    threshold = np.random.sample()
+
+    if threshold < epsilon:
+        action = np.random.randint(4)
+    else:
+        action = int(torch.argmax(network_output))
+    #prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
+    #action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
     return action

@@ -29,13 +29,15 @@ class ConvNetwork(nn.Module):
     def __init__(self):
 
         super().__init__()
-        self.stacked_layers = nn.Sequential(nn.Conv2d(2, 4, kernel_size=(3, 3)),
-                                            nn.MaxPool2d(kernel_size=2),
+        self.stacked_layers = nn.Sequential(nn.Conv2d(2, 4, kernel_size=(2, 2)),
+                                            nn.ReLU(),
+                                            nn.Conv2d(4, 4, kernel_size=(2, 2)),
+                                            nn.ReLU(),
+                                            nn.MaxPool2d(kernel_size=3),
                                             # nn.Conv2d(3, 3, kernel_size=(2, 2)),
                                             # nn.AvgPool2d(kernel_size=2),
-                                            nn.ReLU(),
                                             nn.Flatten(start_dim=1),
-                                            nn.Linear(36, 20),
+                                            nn.Linear(16, 20),
                                             nn.ReLU(),
                                             # nn.Linear(36, 12),
                                             # nn.ReLU(),
