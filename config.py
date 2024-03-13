@@ -24,5 +24,8 @@ MINI_BATCH_TRAINING = False
 FCMODEL = False
 EXPLORATION = 5000
 EPS_DECLINE = 100000
+LOAD_EXPLORATION = True
+SAVE_EXPLORATION = False
+DATA_DIR = 'collected_data/'
 
  # use command DISPLAY=$(grep nameserver /etc/resolv.conf | awk '{print $2}'):0.0 when looking for virtual display output in WSL2 or copy in bashrc file

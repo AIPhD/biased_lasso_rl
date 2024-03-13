@@ -17,7 +17,10 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
     env = gym.make('gym_examples/GridWorld-v0', render_mode=render_mode)
     # env = gym.make('Pong-v0')
     # wrapped_env = RelativePosition(env)
-    replay_memory = deque([], maxlen=c.CAPACITY)
+    if c.LOAD_EXPLORATION:
+        replay_memory = torch.load(c.DATA_DIR + 'exploration_data.pt')
+    else:
+        replay_memory = deque([], maxlen=c.CAPACITY)
     target_update_counter = 0
     exploration_counter = 0
     eps_decline_counter = 0
@@ -55,6 +58,10 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
             n_segments = int(len(replay_memory)/c.BATCH_SIZE)
 
             if exploration_counter >= c.EXPLORATION:
+
+                if exploration_counter == c.EXPLORATION and c.SAVE_EXPLORATION:
+                    torch.save(replay_memory, c.DATA_DIR + 'exploration_data.pt')
+
                 eps_decline_counter += 1
                 target_update_counter += 1
                 o.optimization_step(network_model, target_net, replay_memory, n_segments)
