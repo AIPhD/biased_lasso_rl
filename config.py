@@ -1,4 +1,6 @@
+from pathlib import Path
 import torch
+
 
 DEVICE = (
     "cuda"
@@ -8,6 +10,7 @@ DEVICE = (
     else "cpu"
 )
 
+SIZE = 19
 INPUT = 128
 OUTPUT = 4
 EPOCHS = 20000
@@ -24,8 +27,9 @@ MINI_BATCH_TRAINING = False
 FCMODEL = False
 EXPLORATION = 5000
 EPS_DECLINE = 100000
-LOAD_EXPLORATION = True
-SAVE_EXPLORATION = False
+LOAD_EXPLORATION = False
+SAVE_EXPLORATION = True
 DATA_DIR = 'collected_data/'
+Path("collected_data").mkdir(parents=True, exist_ok=True)
 
  # use command DISPLAY=$(grep nameserver /etc/resolv.conf | awk '{print $2}'):0.0 when looking for virtual display output in WSL2 or copy in bashrc file

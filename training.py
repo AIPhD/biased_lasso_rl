@@ -81,6 +81,11 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
     return network_model
 
 
+def offline_initialization(network_model, target_model, replay_memory, n_epochs=100, batch_size=50):
+    '''Use saved replay memory data to do offline training in an initialization phase.'''
+    pass
+
+
 def create_fc_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
@@ -95,7 +100,7 @@ def create_fc_state_vector(observation):
 def create_conv_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for convolutional NN.'''
 
-    state_vector = torch.zeros(1, 2, 8, 8).to(c.DEVICE)
+    state_vector = torch.zeros(1, 2, c.SIZE, c.SIZE).to(c.DEVICE)
     state_vector[0, 0, observation['agent'][0], observation['agent'][1]] = 1
     state_vector[0, 1, observation['target'][0], observation['target'][1]] = 1
 
@@ -114,3 +119,7 @@ def select_action(network_output, epsilon):
     #prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
     #action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
     return action
+
+
+def monte_carlo_exploration(state_history):
+    pass
