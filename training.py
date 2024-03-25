@@ -60,6 +60,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
 
             state = next_state
             n_segments = int(len(replay_memory)/c.BATCH_SIZE)
+            monte_carlo_exploration(replay_memory, env.action_space)
 
             if exploration_counter >= c.EXPLORATION:
 
@@ -93,9 +94,10 @@ def offline_initialization(network_model, target_model, replay_memory, n_epochs=
 def create_fc_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
-    state_vector = torch.zeros(2, 8, 8).to(c.DEVICE)
+    state_vector = torch.zeros(3, 8, 8).to(c.DEVICE)
     state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
     state_vector[1, observation['target'][0], observation['target'][1]] = 1
+    state_vector[2, observation['walls'][0], observation['walls'][1]] = 1
     state_vector = torch.flatten(state_vector)
 
     return state_vector
@@ -104,9 +106,10 @@ def create_fc_state_vector(observation):
 def create_conv_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for convolutional NN.'''
 
-    state_vector = torch.zeros(1, 2, c.SIZE, c.SIZE).to(c.DEVICE)
+    state_vector = torch.zeros(1, 3, c.SIZE, c.SIZE).to(c.DEVICE)
     state_vector[0, 0, observation['agent'][0], observation['agent'][1]] = 1
     state_vector[0, 1, observation['target'][0], observation['target'][1]] = 1
+    state_vector[0, 2, observation['walls'][0], observation['walls'][1]] = 1
 
     return state_vector
 
@@ -126,23 +129,23 @@ def select_action(network_output, epsilon):
 
 
 def monte_carlo_exploration(state_history, action_space):
+    '''Monte carlo exploration for finding sufficent data for training.'''
     total_length = len(state_history)
     unzipped_history = o.Transition(*zip(*state_history))
     pre_state_history = torch.stack(unzipped_history.state)
     apre_state_history = torch.stack(unzipped_history.next_state)
-    action_history = torch.stack(unzipped_history.action)
-    reward_history = torch.stack(unzipped_history.reward)
+    action_history = torch.tensor(unzipped_history.action).to(c.DEVICE)[:, None]
+    reward_history = torch.tensor(unzipped_history.reward).to(c.DEVICE)
     current_state = apre_state_history[-1]
     repeated_state_indices = torch.where(current_state==pre_state_history)
     current_state_actions = action_history[repeated_state_indices]
     current_reward_by_action = reward_history[repeated_state_indices]
     action_indices = []
     mean_rewards = []
-    exploration_array = np.zeros(len(action_space)
+    exploration_array = np.zeros(len(action_space))
 
     for action in action_space:
         if torch.where(current_state_actions==action) is not None:
             action_indices.append(torch.where(current_state_actions==action))
             mean_rewards.append(torch.index_select(current_reward_by_action, action_indices[-1]).sum()/len(action_indices[-1]))
-            exploration_array[action] = 
-
+            exploration_array[action] = 1

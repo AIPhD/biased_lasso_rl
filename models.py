@@ -29,7 +29,7 @@ class ConvNetwork(nn.Module):
     def __init__(self):
 
         super().__init__()
-        self.stacked_layers = nn.Sequential(nn.Conv2d(2, 3, kernel_size=(3, 3)),
+        self.stacked_layers = nn.Sequential(nn.Conv2d(3, 3, kernel_size=(3, 3)),
                                             nn.ReLU(),
                                             nn.Conv2d(3, 3, kernel_size=(3, 3)),
                                             nn.ReLU(),
