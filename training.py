@@ -21,9 +21,12 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
         replay_memory = torch.load(c.DATA_DIR + 'exploration_data.pt')
     else:
         replay_memory = deque([], maxlen=c.CAPACITY)
+    visited_locations = []
     target_update_counter = 0
     exploration_counter = 0
     eps_decline_counter = 0
+    action_space = env.action_space
+
     for epoch in range(c.EPOCHS):
         obs, info = env.reset()
         # env.close()
@@ -41,6 +44,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
             # action = env.action_space.sample()
             epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.1)
             exploration_counter += 1
+            visited_locations.append(state[0])
             action = select_action(network_model(state), epsilon)
             next_obs, reward, done, info, dis = env.step(action)
             accumulated_reward += reward
@@ -121,5 +125,24 @@ def select_action(network_output, epsilon):
     return action
 
 
-def monte_carlo_exploration(state_history):
-    pass
+def monte_carlo_exploration(state_history, action_space):
+    total_length = len(state_history)
+    unzipped_history = o.Transition(*zip(*state_history))
+    pre_state_history = torch.stack(unzipped_history.state)
+    apre_state_history = torch.stack(unzipped_history.next_state)
+    action_history = torch.stack(unzipped_history.action)
+    reward_history = torch.stack(unzipped_history.reward)
+    current_state = apre_state_history[-1]
+    repeated_state_indices = torch.where(current_state==pre_state_history)
+    current_state_actions = action_history[repeated_state_indices]
+    current_reward_by_action = reward_history[repeated_state_indices]
+    action_indices = []
+    mean_rewards = []
+    exploration_array = np.zeros(len(action_space)
+
+    for action in action_space:
+        if torch.where(current_state_actions==action) is not None:
+            action_indices.append(torch.where(current_state_actions==action))
+            mean_rewards.append(torch.index_select(current_reward_by_action, action_indices[-1]).sum()/len(action_indices[-1]))
+            exploration_array[action] = 
+
