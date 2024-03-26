@@ -69,7 +69,6 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
 
             state = next_state
             n_segments = int(len(replay_memory)/c.BATCH_SIZE)
-            monte_carlo_exploration(replay_memory, range(env.action_space.n))
 
             if exploration_counter >= c.EXPLORATION:
 
