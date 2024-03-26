@@ -1,4 +1,5 @@
 import time
+import random
 from collections import deque
 import torch
 from gym_examples.envs.grid_world import GridWorldEnv
@@ -21,7 +22,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
         replay_memory = torch.load(c.DATA_DIR + 'exploration_data.pt')
     else:
         replay_memory = deque([], maxlen=c.CAPACITY)
-    visited_locations = []
+
     target_update_counter = 0
     exploration_counter = 0
     eps_decline_counter = 0
@@ -38,29 +39,37 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
 
         print(f"{epoch} epochs done.")
         accumulated_reward = 0
+        mc_explore=False
+
         for i in range(c.EPISODES):
             env.render()
             # time.sleep(0.1)
             # action = env.action_space.sample()
             epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.1)
             exploration_counter += 1
-            visited_locations.append(state[0])
-            action = select_action(network_model(state), epsilon)
+
+            if i > 0:
+                mc_explore = True
+
+            action = select_action(network_model(state),
+                                   epsilon,
+                                   mc_explore,
+                                   replay_memory,
+                                   range(action_space.n))
             next_obs, reward, done, info, dis = env.step(action)
             accumulated_reward += reward
 
             if c.FCMODEL:
-                state = create_fc_state_vector(obs)
                 next_state = create_fc_state_vector(next_obs)
                 replay_memory.append(o.Transition(state, action, next_state, reward))
+
             else:
-                state = create_conv_state_vector(obs)
                 next_state = create_conv_state_vector(next_obs)
                 replay_memory.append(o.Transition(state[0], action, next_state[0], reward))
 
             state = next_state
             n_segments = int(len(replay_memory)/c.BATCH_SIZE)
-            monte_carlo_exploration(replay_memory, env.action_space)
+            monte_carlo_exploration(replay_memory, range(env.action_space.n))
 
             if exploration_counter >= c.EXPLORATION:
 
@@ -114,13 +123,18 @@ def create_conv_state_vector(observation):
     return state_vector
 
 
-def select_action(network_output, epsilon):
+def select_action(network_output, epsilon, mc_explore, state_history, action_space):
     '''Calculate, which action to take, with best estimated chance.'''
 
     threshold = np.random.sample()
 
     if threshold < epsilon:
-        action = np.random.randint(4)
+
+        if mc_explore:
+            action = monte_carlo_exploration(state_history, action_space)
+        else:
+            action = np.random.randint(4)
+
     else:
         action = int(torch.argmax(network_output))
     #prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
@@ -130,22 +144,40 @@ def select_action(network_output, epsilon):
 
 def monte_carlo_exploration(state_history, action_space):
     '''Monte carlo exploration for finding sufficent data for training.'''
-    total_length = len(state_history)
+
     unzipped_history = o.Transition(*zip(*state_history))
     pre_state_history = torch.stack(unzipped_history.state)
     apre_state_history = torch.stack(unzipped_history.next_state)
-    action_history = torch.tensor(unzipped_history.action).to(c.DEVICE)[:, None]
+    action_history = torch.tensor(unzipped_history.action).to(c.DEVICE)
     reward_history = torch.tensor(unzipped_history.reward).to(c.DEVICE)
-    current_state = apre_state_history[-1]
-    repeated_state_indices = torch.where(current_state==pre_state_history)
-    current_state_actions = action_history[repeated_state_indices]
-    current_reward_by_action = reward_history[repeated_state_indices]
-    action_indices = []
-    mean_rewards = []
-    exploration_array = np.zeros(len(action_space))
+    current_state = apre_state_history.tolist()[-1]
+    total_length = len(action_history.tolist())
 
-    for action in action_space:
-        if torch.where(current_state_actions==action) is not None:
-            action_indices.append(torch.where(current_state_actions==action))
-            mean_rewards.append(torch.index_select(current_reward_by_action, action_indices[-1]).sum()/len(action_indices[-1]))
-            exploration_array[action] = 1
+    repeated_state_indices=[a for a, i in enumerate(pre_state_history.tolist()) if i==current_state] #pre_state_history.tolist().index(current_state.tolist())
+
+    if len(repeated_state_indices) > 0:
+        current_state_actions = action_history[repeated_state_indices]
+        current_reward_by_action = reward_history[repeated_state_indices]
+        action_indices = []
+        mean_rewards = []
+        ucb_value = []
+
+        for action in action_space:
+
+            action_indices.append([a for a, i in enumerate(current_state_actions.tolist()) if i==action])
+
+            if len(action_indices[-1]) > 0:
+                mean_rewards.append(current_reward_by_action[action_indices[-1]].sum()/len(action_indices[-1]))
+                ucb_value.append(mean_rewards[-1].to("cpu") + c.MC_EXPLORE_CONST*np.log(total_length)/len(action_indices[-1]))
+
+            else:
+                new_action = action
+                break
+
+            new_action = int(np.argmax(ucb_value))
+            print(ucb_value)
+
+    else:
+        new_action = random.sample(action_space, 1)[0]
+
+    return new_action
