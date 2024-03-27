@@ -48,8 +48,11 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
             epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.1)
             exploration_counter += 1
 
-            if i > 0:
+            if i > 0 and epsilon > 0.1:
                 mc_explore = True
+
+            else:
+                mc_explore=False
 
             action = select_action(network_model(state),
                                    epsilon,
@@ -102,7 +105,7 @@ def offline_initialization(network_model, target_model, replay_memory, n_epochs=
 def create_fc_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
-    state_vector = torch.zeros(3, 8, 8).to(c.DEVICE)
+    state_vector = torch.zeros(3, c.SIZE, c.SIZE).to(c.DEVICE)
     state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
     state_vector[1, observation['target'][0], observation['target'][1]] = 1
     state_vector[2, observation['walls'][0], observation['walls'][1]] = 1
@@ -152,7 +155,7 @@ def monte_carlo_exploration(state_history, action_space):
     current_state = apre_state_history.tolist()[-1]
     total_length = len(action_history.tolist())
 
-    repeated_state_indices=[a for a, i in enumerate(pre_state_history.tolist()) if i==current_state] #pre_state_history.tolist().index(current_state.tolist())
+    repeated_state_indices=[a for a, i in enumerate(pre_state_history.tolist()) if i==current_state]
 
     if len(repeated_state_indices) > 0:
         current_state_actions = action_history[repeated_state_indices]
@@ -174,9 +177,23 @@ def monte_carlo_exploration(state_history, action_space):
                 break
 
             new_action = int(np.argmax(ucb_value))
-            print(ucb_value)
+            # print(ucb_value)
 
     else:
-        new_action = random.sample(action_space, 1)[0]
+        new_action_space = list(action_space)
+
+        if int(action_history[-1])==0:
+            del new_action_space[2]
+
+        elif int(action_history[-1])==1:
+            del new_action_space[3]
+
+        elif int(action_history[-1])==2:
+            del new_action_space[0]
+
+        elif int(action_history[-1])==3:
+            del new_action_space[1]
+
+        new_action = random.sample(new_action_space, 1)[0]
 
     return new_action

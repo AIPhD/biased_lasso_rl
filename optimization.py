@@ -21,6 +21,7 @@ def optimization_step(network_model,
     optimizer = optim.Adam(network_model.parameters(),
                           lr=c.LEARNING_RATE)
     set_size = len(memory_sample)
+    target_net.requires_grad_(requires_grad=False)
 
     if set_size < c.BATCH_SIZE:
         return
