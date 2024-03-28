@@ -10,13 +10,13 @@ class FullConnectedNetwork(nn.Module):
     def __init__(self):
 
         super().__init__()
-        self.stacked_layers = nn.Sequential(nn.Linear(c.INPUT, c.INPUT),
-                                            nn.Sigmoid(),
+        self.stacked_layers = nn.Sequential(nn.Linear(c.INPUT, 16),
+                                            nn.ReLU(),
                                             # nn.Linear(256,64),
                                             # nn.ReLU(),
-                                            nn.Linear(c.INPUT, c.INPUT),
-                                            nn.Sigmoid(),
-                                            nn.Linear(c.INPUT, c.OUTPUT))
+                                            nn.Linear(16, 16),
+                                            nn.ReLU(),
+                                            nn.Linear(16, c.OUTPUT))
         self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
 
     def forward(self, x_input):

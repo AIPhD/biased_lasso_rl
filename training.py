@@ -15,7 +15,8 @@ import models as m
 def train_network(network_model, target_net, render_mode=c.RENDER):
     '''Function to train a model given the collected batch data set.'''
 
-    env = gym.make('gym_examples/GridWorld-v0', render_mode=render_mode)
+    game = 'CartPole-v1'
+    env = gym.make(game, render_mode=render_mode)
     # env = gym.make('Pong-v0')
     # wrapped_env = RelativePosition(env)
     if c.LOAD_EXPLORATION:
@@ -33,9 +34,9 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
         # env.close()
 
         if c.FCMODEL:
-            state = create_fc_state_vector(obs)
+            state = create_fc_state_vector(obs, game)
         else:
-            state = create_conv_state_vector(obs)
+            state = create_conv_state_vector(obs, game)
 
         print(f"{epoch} epochs done.")
         accumulated_reward = 0
@@ -49,7 +50,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
             exploration_counter += 1
 
             if i > 0 and epsilon > 0.1:
-                mc_explore = True
+                mc_explore = False
 
             else:
                 mc_explore=False
@@ -60,14 +61,19 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
                                    replay_memory,
                                    range(action_space.n))
             next_obs, reward, done, info, dis = env.step(action)
+
+            if done:
+                reward = -1
+                print(reward)
+
             accumulated_reward += reward
 
             if c.FCMODEL:
-                next_state = create_fc_state_vector(next_obs)
+                next_state = create_fc_state_vector(next_obs, game)
                 replay_memory.append(o.Transition(state, action, next_state, reward))
 
             else:
-                next_state = create_conv_state_vector(next_obs)
+                next_state = create_conv_state_vector(next_obs, game)
                 replay_memory.append(o.Transition(state[0], action, next_state[0], reward))
 
             state = next_state
@@ -102,14 +108,18 @@ def offline_initialization(network_model, target_model, replay_memory, n_epochs=
     pass
 
 
-def create_fc_state_vector(observation):
+def create_fc_state_vector(observation, game):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
-    state_vector = torch.zeros(3, c.SIZE, c.SIZE).to(c.DEVICE)
-    state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
-    state_vector[1, observation['target'][0], observation['target'][1]] = 1
-    state_vector[2, observation['walls'][0], observation['walls'][1]] = 1
-    state_vector = torch.flatten(state_vector)
+    if game=='CartPole-v1':
+        state_vector = torch.Tensor(observation)
+
+    else:
+        state_vector = torch.zeros(3, c.SIZE, c.SIZE).to(c.DEVICE)
+        state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
+        state_vector[1, observation['target'][0], observation['target'][1]] = 1
+        state_vector[2, observation['walls'][0], observation['walls'][1]] = 1
+        state_vector = torch.flatten(state_vector)
 
     return state_vector
 
@@ -135,7 +145,7 @@ def select_action(network_output, epsilon, mc_explore, state_history, action_spa
         if mc_explore:
             action = monte_carlo_exploration(state_history, action_space)
         else:
-            action = np.random.randint(4)
+            action = np.random.randint(c.OUTPUT)
 
     else:
         action = int(torch.argmax(network_output))
