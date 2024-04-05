@@ -63,8 +63,10 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
             next_obs, reward, done, info, dis = env.step(action)
 
             if done:
-                reward = -1
+                reward = -10
                 print(reward)
+            else:
+                reward = 1
 
             accumulated_reward += reward
 
