@@ -16,7 +16,7 @@ class FullConnectedNetwork(nn.Module):
                                             # nn.ReLU(),
                                             nn.Linear(64, 64),
                                             nn.ReLU(),
-                                            nn.Linear(16, c.OUTPUT))
+                                            nn.Linear(64, c.OUTPUT))
         self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
 
     def forward(self, x_input):

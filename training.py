@@ -114,7 +114,7 @@ def create_fc_state_vector(observation, game):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
     if game=='CartPole-v1':
-        state_vector = torch.Tensor(observation)
+        state_vector = torch.Tensor(observation).to(c.DEVICE)
 
     else:
         state_vector = torch.zeros(3, c.SIZE, c.SIZE).to(c.DEVICE)
