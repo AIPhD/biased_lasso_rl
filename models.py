@@ -9,20 +9,25 @@ class FullConnectedNetwork(nn.Module):
 
     def __init__(self):
 
-        super().__init__()
-        self.stacked_layers = nn.Sequential(nn.Linear(c.INPUT, 64),
-                                            nn.ReLU(),
-                                            # nn.Linear(256,64),
-                                            # nn.ReLU(),
-                                            nn.Linear(64, 64),
-                                            nn.ReLU(),
-                                            nn.Linear(64, c.OUTPUT))
-        self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
+        super(FullConnectedNetwork, self).__init__()
+        # self.stacked_layers = nn.Sequential(nn.Linear(c.INPUT, 16),
+        #                                     nn.ReLU(),
+        #                                     # nn.Linear(256,64),
+        #                                     # nn.ReLU(),
+        #                                     nn.Linear(16, 16),
+        #                                     nn.ReLU(),
+        #                                     nn.Linear(16, c.OUTPUT))
+        # self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
+        self.layer1 = nn.Linear(c.INPUT, 16)
+        self.layer2 = nn.Linear(16, 16)
+        self.layer3 = nn.Linear(16, c.OUTPUT)
+
 
     def forward(self, x_input):
         '''Calculates output of the network given data x_input'''
-        self.y_output = self.stacked_layers(x_input)
-        return self.y_output
+        x_input = nn.functional.relu(self.layer1(x_input))
+        x_input = nn.functional.relu(self.layer2(x_input))
+        return self.layer3(x_input)
 
 
 class ConvNetwork(nn.Module):

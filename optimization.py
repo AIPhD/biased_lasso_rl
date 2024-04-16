@@ -19,7 +19,8 @@ def optimization_step(network_model,
 
     criterion = nn.MSELoss()
     optimizer = optim.Adam(network_model.parameters(),
-                          lr=c.LEARNING_RATE)
+                          lr=c.LEARNING_RATE,
+                          amsgrad=True)
     set_size = len(memory_sample)
     target_net.requires_grad_(requires_grad=False)
 

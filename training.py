@@ -10,6 +10,7 @@ import numpy as np
 import config as c
 import optimization as o
 import models as m
+import evaluation as e
 
 
 def train_network(network_model, target_net, render_mode=c.RENDER):
@@ -27,6 +28,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
     target_update_counter = 0
     exploration_counter = 0
     eps_decline_counter = 0
+    acc_reward_array = []
     action_space = env.action_space
 
     for epoch in range(c.EPOCHS):
@@ -92,7 +94,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
 
                 if target_update_counter == c.UPDATE_TARGET:
                     for key in target_net.state_dict():
-                        target_net.state_dict()[key] = network_model.state_dict()[key]
+                        target_net.state_dict()[key] = c.TAU*network_model.state_dict()[key] + (1 - c.TAU)*target_net.state_dict()[key]
 
                     target_update_counter = 0
 
@@ -102,6 +104,9 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
 
         print(f'epsilon = {epsilon}')
         print(f'Accumulated a total reward of {accumulated_reward}.')
+        acc_reward_array.append(accumulated_reward)
+
+    e.plot_cumulative_rewards(np.asarray(acc_reward_array))
     return network_model
 
 
