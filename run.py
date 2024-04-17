@@ -1,16 +1,10 @@
-import time
-from gym_examples.envs.grid_world import GridWorldEnv
-from gym_examples.wrappers import RelativePosition
-import gym
-import matplotlib.pyplot as plt
-import numpy as np
 import config as c
 import models as m
 import training as t
 
 
 def main():
-    '''Main function of the RL setting.'''
+    '''Main process of the biased RL setting.'''
 
     if c.FCMODEL:
         q_network = m.FullConnectedNetwork().to(c.DEVICE)

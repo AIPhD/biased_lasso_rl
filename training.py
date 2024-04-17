@@ -1,15 +1,13 @@
-import time
+# import time
 import random
 from collections import deque
 import torch
-from gym_examples.envs.grid_world import GridWorldEnv
-from gym_examples.wrappers import RelativePosition
+# from gym_examples.envs.grid_world import GridWorldEnv
+# from gym_examples.wrappers import RelativePosition
 import gym
-import matplotlib.pyplot as plt
 import numpy as np
 import config as c
 import optimization as o
-import models as m
 import evaluation as e
 
 
@@ -38,7 +36,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
         if c.FCMODEL:
             state = create_fc_state_vector(obs, game)
         else:
-            state = create_conv_state_vector(obs, game)
+            state = create_conv_state_vector(obs)
 
         print(f"{epoch} epochs done.")
         accumulated_reward = 0
@@ -77,7 +75,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
                 replay_memory.append(o.Transition(state, action, next_state, reward))
 
             else:
-                next_state = create_conv_state_vector(next_obs, game)
+                next_state = create_conv_state_vector(next_obs)
                 replay_memory.append(o.Transition(state[0], action, next_state[0], reward))
 
             state = next_state
@@ -110,9 +108,13 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
     return network_model
 
 
-def offline_initialization(network_model, target_model, replay_memory, n_epochs=100, batch_size=50):
-    '''Use saved replay memory data to do offline training in an initialization phase.'''
-    pass
+# def offline_initialization(network_model,
+#                            target_model,
+#                            replay_memory,
+#                            n_epochs=100,
+#                            batch_size=50):
+#     '''Use saved replay memory data to do offline training in an initialization phase.'''
+#     pass
 
 
 def create_fc_state_vector(observation, game):

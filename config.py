@@ -18,7 +18,8 @@ TAU = 0.05
 EPISODES = 250
 TRAIN_EPOCH = 10
 GAMMA = 0.99
-LEARNING_RATE = 0.0001
+LAMB = 0.1
+LEARNING_RATE = 0.001
 MOMENTUM = 0.9
 CAPACITY = 10000
 BATCH_SIZE = 128
@@ -36,4 +37,6 @@ DATA_DIR = 'collected_data/'
 PLOT_DIR = '/home/steven/biased_lasso_rl/plots/'
 Path("collected_data").mkdir(parents=True, exist_ok=True)
 
- # use command DISPLAY=$(grep nameserver /etc/resolv.conf | awk '{print $2}'):0.0 when looking for virtual display output in WSL2 or copy in bashrc file
+ # use command DISPLAY=$(grep nameserver /etc/resolv.conf | awk '{print $2}'):0.0
+ # when looking for virtual display output in WSL2 or copy in bashrc file
+ 

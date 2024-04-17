@@ -10,6 +10,7 @@ def plot_cumulative_rewards(total_reward,
                             save_plot=c.SAVE_PLOT,
                             directory='',
                             plot_suffix='test_run'):
+    '''Plot total reward per epochs as a function of epochs.'''
 
     plt.xlabel(x_label)
     plt.ylabel(y_label)
@@ -25,4 +26,3 @@ def plot_cumulative_rewards(total_reward,
                     pad_inches=0)
 
     plt.close()
-    return

@@ -48,6 +48,16 @@ def optimization_step(network_model,
         with torch.no_grad():
             target_batch = reward_batch + c.GAMMA * torch.max(target_net(next_state_batch),
                                                                 1).values
-        loss_output = criterion(target_batch, q_output)
+        l2_reg = None
+
+        for param in network_model.parameters():
+
+            if l2_reg is None:
+                l2_reg = param.norm(2)**2
+
+            else:
+                l2_reg = l2_reg + param.norm(2)**2
+
+        loss_output = criterion(target_batch, q_output) + c.LAMB*l2_reg
         loss_output.backward()
         optimizer.step()
