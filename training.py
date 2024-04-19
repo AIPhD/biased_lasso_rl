@@ -53,7 +53,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
                 mc_explore = False
 
             else:
-                mc_explore=False
+                mc_explore = False
 
             action = select_action(network_model(state),
                                    epsilon,
@@ -81,20 +81,22 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
             state = next_state
             n_segments = int(len(replay_memory)/c.BATCH_SIZE)
 
-            if exploration_counter >= c.EXPLORATION:
-
-                if exploration_counter == c.EXPLORATION and c.SAVE_EXPLORATION:
-                    torch.save(replay_memory, c.DATA_DIR + 'exploration_data.pt')
-
-                eps_decline_counter += 1
-                target_update_counter += 1
+            if len(replay_memory) >= c.BATCH_SIZE:
                 o.optimization_step(network_model, target_net, replay_memory, n_segments)
+                target_update_counter += 1
 
                 if target_update_counter == c.UPDATE_TARGET:
                     for key in target_net.state_dict():
                         target_net.state_dict()[key] = c.TAU*network_model.state_dict()[key] + (1 - c.TAU)*target_net.state_dict()[key]
 
                     target_update_counter = 0
+
+            if exploration_counter >= c.EXPLORATION:
+
+                if exploration_counter == c.EXPLORATION and c.SAVE_EXPLORATION:
+                    torch.save(replay_memory, c.DATA_DIR + 'exploration_data.pt')
+
+                eps_decline_counter += 1
 
             if done:
                 print(f"Episode finished after {i+1} timesteps.")
@@ -157,6 +159,9 @@ def select_action(network_output, epsilon, mc_explore, state_history, action_spa
             action = np.random.randint(c.OUTPUT)
 
     else:
+        if torch.max(network_output).isnan():
+            print('Nan Value detected')
+
         action = int(torch.argmax(network_output))
     #prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
     #action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
