@@ -2,9 +2,9 @@
 import random
 from collections import deque
 import torch
-# from gym_examples.envs.grid_world import GridWorldEnv
-# from gym_examples.wrappers import RelativePosition
 import gym
+from gym_examples.envs.grid_world import GridWorldEnv
+# from gym_examples.wrappers import RelativePosition
 import numpy as np
 import config as c
 import optimization as o
@@ -14,7 +14,7 @@ import evaluation as e
 def train_network(network_model, target_net, render_mode=c.RENDER):
     '''Function to train a model given the collected batch data set.'''
 
-    game = 'CartPole-v1'
+    game = 'gym_examples/GridWorld-v0' # 'CartPole-v1'
     env = gym.make(game, render_mode=render_mode)
     # env = gym.make('Pong-v0')
     # wrapped_env = RelativePosition(env)
