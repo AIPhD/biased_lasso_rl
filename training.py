@@ -30,7 +30,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
     action_space = env.action_space
 
     for epoch in range(c.EPOCHS):
-        obs, info = env.reset()
+        obs, _ = env.reset()
         # env.close()
 
         if c.FCMODEL:
@@ -46,7 +46,7 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
             env.render()
             # time.sleep(0.1)
             # action = env.action_space.sample()
-            epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.1)
+            epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.05)
             exploration_counter += 1
 
             if i > 0 and epsilon > 0.1:
@@ -60,15 +60,16 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
                                    mc_explore,
                                    replay_memory,
                                    range(action_space.n))
-            next_obs, reward, done, info, dis = env.step(action)
+            next_obs, reward, done, _, _ = env.step(action)
 
             if done:
-                reward = -10
-                print(reward)
-            else:
-                reward = 1
+                # next_state=None
+                reward = -1
 
-            accumulated_reward += reward
+            else:
+                reward = i
+
+            accumulated_reward += 1
 
             if c.FCMODEL:
                 next_state = create_fc_state_vector(next_obs, game)
