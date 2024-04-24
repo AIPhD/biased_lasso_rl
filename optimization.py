@@ -17,13 +17,12 @@ def optimization_step(network_model,
                       mini_batch_training=c.MINI_BATCH_TRAINING):
     "Optimization step given model and collected data."
 
-    criterion = nn.MSELoss()
-    optimizer = optim.SGD(network_model.parameters(),
-                          lr=c.LEARNING_RATE,
-                          momentum=0.9)
-    # optimizer = optim.Adam(network_model.parameters(),
-    #                        lr=c.LEARNING_RATE,
-    #                        amsgrad=False)
+    criterion = nn.HuberLoss()
+    optimizer = optim.Adam(network_model.parameters(),
+                           lr=c.LEARNING_RATE,
+                           amsgrad=True)
+    # optimizer = optim.SGD(network_model.parameters(),
+    #                        lr=c.LEARNING_RATE)
     set_size = len(memory_sample)
     target_net.requires_grad_(requires_grad=False)
 
@@ -64,3 +63,4 @@ def optimization_step(network_model,
         loss_output = criterion(target_batch, q_output) + c.LAMB*l2_reg
         loss_output.backward()
         optimizer.step()
+        # print("optimization step concluded")
