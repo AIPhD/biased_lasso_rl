@@ -14,13 +14,15 @@ def optimization_step(network_model,
                       target_net,
                       memory_sample,
                       no_segments,
+                      source_network=None,
+                      transfer_learning=True,
                       mini_batch_training=c.MINI_BATCH_TRAINING):
     "Optimization step given model and collected data."
 
-    criterion = nn.HuberLoss()
+    criterion = nn.MSELoss()
     optimizer = optim.Adam(network_model.parameters(),
                            lr=c.LEARNING_RATE,
-                           amsgrad=True)
+                           amsgrad=False)
     # optimizer = optim.SGD(network_model.parameters(),
     #                        lr=c.LEARNING_RATE)
     set_size = len(memory_sample)

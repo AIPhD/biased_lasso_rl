@@ -8,14 +8,18 @@ from gym_examples.envs.grid_world import GridWorldEnv
 import numpy as np
 import config as c
 import optimization as o
+import models as m
 import evaluation as e
 
 
-def train_network(network_model, target_net, render_mode=c.RENDER):
+def train_network(network_model,
+                  target_net,
+                  no_segments=c.NO_SEGMENTS,
+                  game='gym_examples/GridWorld-v0',
+                  render_mode=c.RENDER):
     '''Function to train a model given the collected batch data set.'''
 
-    game = 'gym_examples/GridWorld-v0' # 'CartPole-v1'
-    env = gym.make(game, render_mode=render_mode)
+    # game = 'CartPole-v1'
     # env = gym.make('Pong-v0')
     # wrapped_env = RelativePosition(env)
     if c.LOAD_EXPLORATION:
@@ -26,86 +30,94 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
     target_update_counter = 0
     exploration_counter = 0
     eps_decline_counter = 0
+
+    if game == 'gym_examples/Gridworld-v0':
+        source_network = m.MazeFCNetwork()
+
     acc_reward_array = []
-    action_space = env.action_space
 
-    for epoch in range(c.EPOCHS):
-        obs, _ = env.reset()
-        # env.close()
-
-        if c.FCMODEL:
-            state = create_fc_state_vector(obs, game)
-        else:
-            state = create_conv_state_vector(obs)
-
-        print(f"{epoch} epochs done.")
-        accumulated_reward = 0
-        mc_explore=False
-
-        for i in range(c.EPISODES):
-            env.render()
-            # time.sleep(0.1)
-            # action = env.action_space.sample()
-            epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.05)
-            exploration_counter += 1
-
-            if i > 0 and epsilon > 0.1:
-                mc_explore = False
-
-            else:
-                mc_explore = False
-
-            action = select_action(network_model(state),
-                                   epsilon,
-                                   mc_explore,
-                                   replay_memory,
-                                   range(action_space.n))
-            next_obs, reward, done, _, _ = env.step(action)
-
-            if done:
-                # next_state=None
-                reward = -1
-
-            else:
-                reward = i
-
-            accumulated_reward += 1
+    for t in range(no_segments):
+        env = gym.make(game, render_mode=render_mode)
+        action_space = env.action_space
+        for epoch in range(c.EPOCHS):
+            obs, _ = env.reset()
+            # env.close()
 
             if c.FCMODEL:
-                next_state = create_fc_state_vector(next_obs, game)
-                replay_memory.append(o.Transition(state, action, next_state, reward))
-
+                state = create_fc_state_vector(obs, game)
             else:
-                next_state = create_conv_state_vector(next_obs)
-                replay_memory.append(o.Transition(state[0], action, next_state[0], reward))
+                state = create_conv_state_vector(obs)
 
-            state = next_state
-            n_segments = int(len(replay_memory)/c.BATCH_SIZE)
+            print(f"{epoch} epochs done.")
+            accumulated_reward = 0
+            mc_explore=False
 
-            if len(replay_memory) >= c.BATCH_SIZE:
-                o.optimization_step(network_model, target_net, replay_memory, n_segments)
-                target_update_counter += 1
+            for i in range(c.EPISODES):
+                env.render()
+                # time.sleep(0.1)
+                # action = env.action_space.sample()
+                epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.05)
+                exploration_counter += 1
 
-                if target_update_counter == c.UPDATE_TARGET:
-                    for key in target_net.state_dict():
-                        target_net.state_dict()[key] = c.TAU*network_model.state_dict()[key] + (1 - c.TAU)*target_net.state_dict()[key]
+                if i > 0 and epsilon > 0.1:
+                    mc_explore = True
 
-                    target_update_counter = 0
+                else:
+                    mc_explore = False
 
-            if exploration_counter >= c.EXPLORATION:
+                action = select_action(network_model(state),
+                                    epsilon,
+                                    mc_explore,
+                                    replay_memory,
+                                    range(action_space.n))
+                next_obs, reward, done, _, _ = env.step(action)
 
-                if exploration_counter == c.EXPLORATION and c.SAVE_EXPLORATION:
-                    torch.save(replay_memory, c.DATA_DIR + 'exploration_data.pt')
+                # if done:
+                #     # next_state=None
+                #     reward = -1
 
-                eps_decline_counter += 1
+                # else:
+                #     reward = i
 
-            if done:
-                print(f"Episode finished after {i+1} timesteps.")
-                break
+                accumulated_reward += reward
 
-        print(f'epsilon = {epsilon}')
-        print(f'Accumulated a total reward of {accumulated_reward}.')
-        acc_reward_array.append(accumulated_reward)
+                if c.FCMODEL:
+                    next_state = create_fc_state_vector(next_obs, game)
+                    replay_memory.append(o.Transition(state, action, next_state, reward))
+
+                else:
+                    next_state = create_conv_state_vector(next_obs)
+                    replay_memory.append(o.Transition(state[0], action, next_state[0], reward))
+
+                state = next_state
+                n_segments = int(len(replay_memory)/c.BATCH_SIZE)
+
+                if len(replay_memory) >= c.BATCH_SIZE:
+                    o.optimization_step(network_model, target_net, replay_memory, n_segments)
+                    target_update_counter += 1
+
+                    if target_update_counter == c.UPDATE_TARGET:
+                        for key in target_net.state_dict():
+                            target_net.state_dict()[key] = c.TAU*network_model.state_dict()[key] + (1 - c.TAU)*target_net.state_dict()[key]
+
+                        target_update_counter = 0
+
+                if exploration_counter >= c.EXPLORATION:
+
+                    if exploration_counter == c.EXPLORATION and c.SAVE_EXPLORATION:
+                        torch.save(replay_memory, c.DATA_DIR + 'exploration_data.pt')
+
+                    eps_decline_counter += 1
+
+                if done:
+                    print(f"Episode finished after {i+1} timesteps.")
+                    break
+
+            print(f'epsilon = {epsilon}')
+            print(f'Accumulated a total reward of {accumulated_reward}.')
+            acc_reward_array.append(accumulated_reward)
+
+        env.close()
 
     e.plot_cumulative_rewards(np.asarray(acc_reward_array))
     return network_model
@@ -120,17 +132,17 @@ def train_network(network_model, target_net, render_mode=c.RENDER):
 #     pass
 
 
-def create_fc_state_vector(observation, game):
+def create_fc_state_vector(observation, game='CartPole-v1'):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
     if game=='CartPole-v1':
         state_vector = torch.Tensor(observation).to(c.DEVICE)
 
     else:
-        state_vector = torch.zeros(3, c.SIZE, c.SIZE).to(c.DEVICE)
-        state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
-        state_vector[1, observation['target'][0], observation['target'][1]] = 1
-        state_vector[2, observation['walls'][0], observation['walls'][1]] = 1
+        state_vector = torch.zeros(c.SIZE, c.SIZE).to(c.DEVICE) # torch.zeros(3, c.SIZE, c.SIZE).to(c.DEVICE)
+        state_vector[observation['agent'][0], observation['agent'][1]] = 1   # state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
+        # state_vector[1, observation['target'][0], observation['target'][1]] = 1
+        # state_vector[2, observation['walls'][0], observation['walls'][1]] = 1
         state_vector = torch.flatten(state_vector)
 
     return state_vector
@@ -157,15 +169,15 @@ def select_action(network_output, epsilon, mc_explore, state_history, action_spa
         if mc_explore:
             action = monte_carlo_exploration(state_history, action_space)
         else:
-            action = np.random.randint(c.OUTPUT)
+            action = np.random.randint(c.GRID_OUTPUT)
 
     else:
         if torch.max(network_output).isnan():
             print('Nan Value detected')
 
-        action = int(torch.argmax(network_output))
-    #prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
-    #action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
+        # action = int(torch.argmax(network_output))
+        prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
+        action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
     return action
 
 
