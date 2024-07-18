@@ -4,11 +4,10 @@ import config as c
 
 
 def plot_cumulative_rewards(total_reward,
-                            epochs=c.EPOCHS,
+                            epochs,
                             x_label="epochs",
                             y_label="Accumulated reward per epoch",
-                            save_plot=c.SAVE_PLOT,
-                            directory='',
+                            directory=None,
                             plot_suffix='test_run'):
     '''Plot total reward per epochs as a function of epochs.'''
 
@@ -18,7 +17,7 @@ def plot_cumulative_rewards(total_reward,
              total_reward)
     plt.show()
 
-    if save_plot:
+    if directory is not None:
         plt.savefig(f'{c.PLOT_DIR}{directory}/{plot_suffix}.pdf',
                     dpi=800,
                     format= "pdf",

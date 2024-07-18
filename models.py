@@ -1,6 +1,7 @@
-# import torch
+import torch
 from torch import nn
-import config as c
+from cartpole_project import config_cartpole as cc
+from maze_project import config_maze as cm
 
 
 class FullConnectedNetwork(nn.Module):
@@ -17,16 +18,18 @@ class FullConnectedNetwork(nn.Module):
         #                                     nn.ReLU(),
         #                                     nn.Linear(16, c.OUTPUT))
         # self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
-        self.layer1 = nn.Linear(c.CART_INPUT, c.HIDDEN_NODE_COUNT)
-        self.layer2 = nn.Linear(c.HIDDEN_NODE_COUNT, c.HIDDEN_NODE_COUNT)
-        self.layer3 = nn.Linear(c.HIDDEN_NODE_COUNT, c.CART_OUTPUT)
+        self.layer1 = nn.Linear(cc.CART_INPUT, cc.HIDDEN_NODE_COUNT)
+        self.layer2 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
+        self.layer3 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
+        self.layern = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.CART_OUTPUT)
 
 
     def forward(self, x_input):
         '''Calculates output of the network given data x_input'''
         x_input = nn.functional.relu(self.layer1(x_input))
         x_input = nn.functional.relu(self.layer2(x_input))
-        return self.layer3(x_input)
+        x_input = nn.functional.relu(self.layer3(x_input))
+        return self.layern(x_input)
 
 
 class ConvNetwork(nn.Module):
@@ -52,7 +55,7 @@ class ConvNetwork(nn.Module):
                                             nn.ReLU(),
                                             # nn.Linear(36, 12),
                                             # nn.ReLU(),
-                                            nn.Linear(8, c.GRID_OUTPUT))
+                                            nn.Linear(8, cm.GRID_OUTPUT))
 #         self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
 
     def forward(self, x_input):
@@ -67,12 +70,12 @@ class MazeFCNetwork(nn.Module):
 
         super().__init__()
 
-        self.layer1 = nn.Linear(c.GRID_INPUT, c.HIDDEN_NODE_COUNT)
-        self.layer2 = nn.Linear(c.HIDDEN_NODE_COUNT, c.HIDDEN_NODE_COUNT)
-        self.layer3 = nn.Linear(c.HIDDEN_NODE_COUNT, c.HIDDEN_NODE_COUNT)
-        self.layer4 = nn.Linear(c.HIDDEN_NODE_COUNT, c.HIDDEN_NODE_COUNT)
-        self.layer5 = nn.Linear(c.HIDDEN_NODE_COUNT, c.HIDDEN_NODE_COUNT)
-        self.layer6 = nn.Linear(c.HIDDEN_NODE_COUNT, c.GRID_OUTPUT)
+        self.layer1 = nn.Linear(cm.GRID_INPUT, cm.HIDDEN_NODE_COUNT)
+        self.layer2 = nn.Linear(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT)
+        self.layer3 = nn.Linear(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT)
+        self.layer4 = nn.Linear(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT)
+        self.layer5 = nn.Linear(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT)
+        self.layer6 = nn.Linear(cm.HIDDEN_NODE_COUNT, cm.GRID_OUTPUT)
 
     def forward(self, x_input):
         '''Calculates output of the network given data x_input'''
@@ -82,3 +85,17 @@ class MazeFCNetwork(nn.Module):
         x_input = nn.functional.relu(self.layer4(x_input))
         x_input = nn.functional.relu(self.layer5(x_input))
         return self.layer6(x_input)
+
+    def init_weights_to_zero(self):
+        self.layer1.weight.data = torch.zeros(cm.GRID_INPUT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer1.bias.data = torch.zeros(cm.GRID_INPUT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer2.weight.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer2.bias.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer3.weight.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer3.bias.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer4.weight.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer4.bias.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer5.weight.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer5.bias.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.layer6.weight.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.GRID_OUTPUT).to(cm.DEVICE)
+        self.layer6.bias.data = torch.zeros(cm.HIDDEN_NODE_COUNT, cm.GRID_OUTPUT).to(cm.DEVICE)
