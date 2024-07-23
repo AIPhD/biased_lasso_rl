@@ -123,9 +123,10 @@ def train_network(network_model,
             acc_reward_array.append(accumulated_reward)
 
         env.close()
-        # source_network = target_net
+        for key in target_net.state_dict():
+            source_network.state_dict()[key] = target_net.state_dict()[key]
 
-    e.plot_cumulative_rewards(np.asarray(acc_reward_array), c.EPOCHS)
+    e.plot_cumulative_rewards(np.asarray(acc_reward_array), c.EPOCHS*no_segments)
     return network_model
 
 
