@@ -32,7 +32,7 @@ def train_network(network_model,
     target_update_counter = 0
     exploration_counter = 0
     eps_decline_counter = 0
-    source_network = m.MazeFCNetwork()
+    source_network = m.MazeFCNetwork().to(c.DEVICE)
     source_network.init_weights_to_zero()
     acc_reward_array = []
 
@@ -121,9 +121,9 @@ def train_network(network_model,
             print(f'epsilon = {epsilon}')
             print(f'Accumulated a total reward of {accumulated_reward}.')
             acc_reward_array.append(accumulated_reward)
-            source_network = target_net
 
         env.close()
+        # source_network = target_net
 
     e.plot_cumulative_rewards(np.asarray(acc_reward_array), c.EPOCHS)
     return network_model

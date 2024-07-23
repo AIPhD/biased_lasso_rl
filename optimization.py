@@ -59,9 +59,9 @@ def optimization_step(network_model,
         l2_reg = None
         l1_reg = None
 
-        reg_vector = network_param_difference(target_net, source_network)
+        reg_vector = network_param_difference(network_model, source_network)
 
-        for param in reg_vector:
+        for param in network_model.parameters():
 
             if l2_reg is None and l1_reg is None:
                 l2_reg = param.norm(2)**2
@@ -83,6 +83,6 @@ def network_param_difference(target_net, source_net):
     regularization_vector = []
 
     for key in target_net.state_dict():
-            regularization_vector.append(target_net.state_dict()[key] - source_net.state_dict()[key])
+        regularization_vector.append(target_net.state_dict()[key] - source_net.state_dict()[key])
 
     return regularization_vector
