@@ -7,7 +7,7 @@ from torch import nn
 import config as c
 
 
-Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
+Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'terminated'))
 
 
 def optimization_step(network_model,
@@ -48,18 +48,23 @@ def optimization_step(network_model,
 
     for mem_batch in mem_batches:
         batch = Transition(*zip(*mem_batch))
-        state_batch = torch.stack(batch.state)
+        state_batch = torch.stack(batch.state).to(c.DEVICE)
         action_batch = torch.tensor(batch.action).to(c.DEVICE)[:, None]
-        next_state_batch = torch.stack(batch.next_state)
+        next_state_batch = torch.stack(batch.next_state).to(c.DEVICE)
         reward_batch = torch.tensor(batch.reward).to(c.DEVICE)
+        term_bool = torch.tensor(batch.terminated).to(c.DEVICE)
         q_output = network_model(state_batch).gather(1, action_batch).flatten()
         with torch.no_grad():
-            target_batch = reward_batch + gamma*torch.max(target_net(next_state_batch),
-                                                                1).values
+            target_batch = reward_batch + gamma*term_bool*torch.max(target_net(next_state_batch),
+                                                                    1).values
         l2_reg = None
         l1_reg = None
 
-        reg_vector = network_param_difference(network_model, source_network)
+        if transfer_learning:
+            reg_vector = network_param_difference(network_model, source_network)
+
+        else:
+            reg_vector = network_model.parameters()
 
         for param in reg_vector:
 

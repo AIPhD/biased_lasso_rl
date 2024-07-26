@@ -63,6 +63,7 @@ def train_network(network_model,
                 # action = env.action_space.sample()
                 epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.05)
                 exploration_counter += 1
+                term_bool = 1
 
                 if i > 0 and epsilon > 0.1:
                     mc_explore = True
@@ -77,6 +78,9 @@ def train_network(network_model,
                                        range(action_space.n))
                 next_obs, reward, done, _, _ = env.step(action)
 
+                if done or i==c.EPISODES - 1:
+                    term_bool = 0
+
                 # if done:
                 #     # next_state=None
                 #     reward = -1
@@ -88,11 +92,11 @@ def train_network(network_model,
 
                 if c.FCMODEL:
                     next_state = create_fc_state_vector(next_obs)
-                    replay_memory.append(o.Transition(state, action, next_state, reward))
+                    replay_memory.append(o.Transition(state, action, next_state, reward, term_bool))
 
                 else:
                     next_state = create_conv_state_vector(next_obs)
-                    replay_memory.append(o.Transition(state[0], action, next_state[0], reward))
+                    replay_memory.append(o.Transition(state[0], action, next_state[0], reward, term_bool))
 
                 state = next_state
                 n_segments = int(len(replay_memory)/c.BATCH_SIZE)
@@ -126,7 +130,10 @@ def train_network(network_model,
         for key in target_net.state_dict():
             source_network.state_dict()[key] = target_net.state_dict()[key]
 
-    e.plot_cumulative_rewards(np.asarray(acc_reward_array), c.EPOCHS*no_segments)
+    e.plot_cumulative_rewards_per_segment(np.cumsum(np.asarray(acc_reward_array)),
+                                          c.EPOCHS*no_segments,
+                                          c.EPOCHS,
+                                          c.NO_SEGMENTS)
     return network_model
 
 

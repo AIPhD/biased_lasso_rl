@@ -1,6 +1,5 @@
 import config as c
 import models as m
-import training as t
 from cartpole_project import training_cartpole as tc
 from maze_project import training_maze as tm
 
