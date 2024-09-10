@@ -38,11 +38,11 @@ class ConvNetwork(nn.Module):
     def __init__(self):
 
         super().__init__()
-        self.stacked_layers = nn.Sequential(nn.Conv2d(3, 3, kernel_size=(2, 2)),
+        self.stacked_layers = nn.Sequential(nn.Conv2d(3, 3, kernel_size=(cm.CONV_KERNEL, cm.CONV_KERNEL)),
                                             nn.ReLU(),
                                             # nn.Conv2d(3, 3, kernel_size=(2, 2)),
                                             # nn.ReLU(),
-                                            nn.MaxPool2d(kernel_size=3),
+                                            nn.MaxPool2d(kernel_size=cm.POOL_KERNEL),
                                             # nn.Conv2d(4, 4, kernel_size=(3, 3)),
                                             # nn.ReLU(),
                                             # nn.Conv2d(3, 3, kernel_size=(2, 2)),
@@ -51,11 +51,11 @@ class ConvNetwork(nn.Module):
                                             # nn.Conv2d(3, 3, kernel_size=(2, 2)),
                                             # nn.AvgPool2d(kernel_size=2),
                                             nn.Flatten(start_dim=1),
-                                            nn.Linear(12, 8),
+                                            nn.Linear(12, cm.HIDDEN_NODE_COUNT),
                                             nn.ReLU(),
                                             # nn.Linear(36, 12),
                                             # nn.ReLU(),
-                                            nn.Linear(8, cm.GRID_OUTPUT))
+                                            nn.Linear(cm.HIDDEN_NODE_COUNT, cm.GRID_OUTPUT))
 #         self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
 
     def forward(self, x_input):

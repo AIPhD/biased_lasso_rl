@@ -4,14 +4,13 @@ from collections import deque
 import torch
 import gym
 import numpy as np
-from . import config_cartpole as c
+from cartpole_project import config_cartpole as c
 import optimization as o
 import models as m
 import evaluation as e
 
 def train_network(network_model,
                   target_net,
-                  game='CartPole-v1',
                   render_mode=c.RENDER):
     '''Function to train a model given the collected batch data set.'''
 
@@ -27,16 +26,16 @@ def train_network(network_model,
     eps_decline_counter = 0
     acc_reward_array = []
 
-    env = gym.make(game, render_mode=render_mode)
+    env = gym.make('CartPole-v1', render_mode=render_mode)
     action_space = env.action_space
-    for epoch in range(c.EPOCHS):
+    for episode in range(c.EPISODES):
         obs, _ = env.reset()
         # env.close()
-        state = create_fc_state_vector(obs, game)
-        print(f"{epoch} epochs done.")
+        state = create_fc_state_vector(obs)
+        print(f"{episode} episodes done.")
         accumulated_reward = 0
 
-        for i in range(c.EPISODES):
+        for i in range(c.TIME_STEPS):
             env.render()
             # time.sleep(0.1)
             # action = env.action_space.sample()
@@ -55,7 +54,7 @@ def train_network(network_model,
 
             accumulated_reward = i
 
-            next_state = create_fc_state_vector(next_obs, game)
+            next_state = create_fc_state_vector(next_obs)
             replay_memory.append(o.Transition(state, action, next_state, reward))
             state = next_state
             n_segments = int(len(replay_memory)/c.BATCH_SIZE)
@@ -107,7 +106,7 @@ def train_network(network_model,
 #     pass
 
 
-def create_fc_state_vector(observation, game='CartPole-v1'):
+def create_fc_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
     state_vector = torch.Tensor(observation).to(c.DEVICE)

@@ -11,17 +11,17 @@ sys.path.append(parent_dir)
 from gym_examples.envs.grid_world import GridWorldEnv
 # from gym_examples.wrappers import RelativePosition
 
-from . import config_maze as c
 import optimization as o
 import models as m
 import evaluation as e
+from maze_project import config_maze as c
 
 
 def train_network(network_model,
                   target_net,
                   no_segments=c.NO_SEGMENTS,
-                  game='gym_examples/GridWorld-v0',
-                  render_mode=c.RENDER):
+                  render_mode=c.RENDER,
+                  conv_net=c.CONVMODEL):
     '''Function to train a model given the collected batch data set.'''
 
     # if c.LOAD_EXPLORATION:
@@ -32,32 +32,53 @@ def train_network(network_model,
     target_update_counter = 0
     exploration_counter = 0
     eps_decline_counter = 0
-    source_network = m.MazeFCNetwork().to(c.DEVICE)
-    source_network.init_weights_to_zero()
+
+    if c.LOAD_NETWORK:
+        if conv_net:
+            source_network = m.ConvNetwork().to(c.DEVICE)
+
+        else:
+            source_network = m.MazeFCNetwork().to(c.DEVICE)
+
+        source_network.load_state_dict(torch.load(c.MODEL_DIR + 'source_network_segment_0'))
+        source_network.eval()
+        transfer_learning = True
+
+    else:
+        if conv_net:
+            source_network = m.ConvNetwork().to(c.DEVICE)
+
+        else:
+            source_network = m.MazeFCNetwork().to(c.DEVICE)
+            source_network.init_weights_to_zero()
+            transfer_learning = False
+
     acc_reward_array = []
+    time_steps_required_array = []
 
     for t in range(no_segments):
 
         for param in source_network.parameters():
             param.requires_grad = False
 
-        env = gym.make(game, render_mode=render_mode)
+        env = gym.make('gym_examples/GridWorld-v0', render_mode=render_mode)
         action_space = env.action_space
         replay_memory = deque([], maxlen=c.CAPACITY)
-        for epoch in range(c.EPOCHS):
+        for episode in range(c.EPISODES):
             obs, _ = env.reset()
             # env.close()
 
-            if c.FCMODEL:
-                state = create_fc_state_vector(obs)
-            else:
+            if conv_net:
                 state = create_conv_state_vector(obs)
+            else:
+                state = create_fc_state_vector(obs)
 
-            print(f"{epoch} epochs done.")
+            print(f"{episode} episodes done.")
             accumulated_reward = 0
+            no_time_steps = 0
             mc_explore=False
 
-            for i in range(c.EPISODES):
+            for i in range(c.TIME_STEPS):
                 env.render()
                 # time.sleep(0.1)
                 # action = env.action_space.sample()
@@ -77,8 +98,9 @@ def train_network(network_model,
                                        replay_memory,
                                        range(action_space.n))
                 next_obs, reward, done, _, _ = env.step(action)
+                no_time_steps += 1
 
-                if done or i==c.EPISODES - 1:
+                if done or i==c.TIME_STEPS - 1:
                     term_bool = 0
 
                 # if done:
@@ -90,19 +112,35 @@ def train_network(network_model,
 
                 accumulated_reward += reward
 
-                if c.FCMODEL:
-                    next_state = create_fc_state_vector(next_obs)
-                    replay_memory.append(o.Transition(state, action, next_state, reward, term_bool))
+                if conv_net:
+                    next_state = create_conv_state_vector(next_obs)
+                    replay_memory.append(o.Transition(state[0],
+                                                      action,
+                                                      next_state[0],
+                                                      reward,
+                                                      term_bool))
 
                 else:
-                    next_state = create_conv_state_vector(next_obs)
-                    replay_memory.append(o.Transition(state[0], action, next_state[0], reward, term_bool))
+                    next_state = create_fc_state_vector(next_obs)
+                    replay_memory.append(o.Transition(state, action, next_state, reward, term_bool))
 
                 state = next_state
                 n_segments = int(len(replay_memory)/c.BATCH_SIZE)
 
-                if len(replay_memory) >= c.BATCH_SIZE:
-                    o.optimization_step(network_model, target_net, replay_memory, n_segments, c.GAMMA, c.LEARNING_RATE, c.LAMB, c.BATCH_SIZE, source_network)
+                if t >= 1:
+                    transfer_learning = True
+
+                if len(replay_memory) >= c.BATCH_SIZE and len(replay_memory) >= c.EXPLORATION:
+                    o.optimization_step(network_model,
+                                        target_net,
+                                        replay_memory,
+                                        n_segments,
+                                        c.GAMMA,
+                                        c.LEARNING_RATE,
+                                        c.LAMB,
+                                        c.BATCH_SIZE,
+                                        source_network,
+                                        transfer_learning)
                     target_update_counter += 1
 
                     if target_update_counter == c.UPDATE_TARGET:
@@ -125,15 +163,24 @@ def train_network(network_model,
             print(f'epsilon = {epsilon}')
             print(f'Accumulated a total reward of {accumulated_reward}.')
             acc_reward_array.append(accumulated_reward)
+            time_steps_required_array.append(no_time_steps)
 
+        torch.save(network_model.state_dict(), c.MODEL_DIR +'source_network_segment_' + str(t))
         env.close()
         for key in target_net.state_dict():
             source_network.state_dict()[key] = target_net.state_dict()[key]
 
+
     e.plot_cumulative_rewards_per_segment(np.cumsum(np.asarray(acc_reward_array)),
-                                          c.EPOCHS*no_segments,
-                                          c.EPOCHS,
-                                          c.NO_SEGMENTS)
+                                          c.EPISODES*no_segments,
+                                          c.EPISODES,
+                                          c.NO_SEGMENTS,
+                                          directory='maze_plots')
+    e.plot_time_steps_in_maze(time_steps_required_array,
+                              c.EPISODES*no_segments,
+                              c.EPISODES,
+                              c.NO_SEGMENTS,
+                              directory='maze_plots')
     return network_model
 
 
@@ -150,7 +197,7 @@ def create_fc_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
     state_vector = torch.zeros(3, c.SIZE, c.SIZE).to(c.DEVICE)
-    state_vector[0, observation['agent'][0], observation['agent'][1]] = 1   # state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
+    state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
     state_vector[1, observation['target'][0], observation['target'][1]] = 1
     state_vector[2, observation['walls'][0], observation['walls'][1]] = 1
     state_vector = torch.flatten(state_vector)
@@ -187,7 +234,8 @@ def select_action(network_output, epsilon, mc_explore, state_history, action_spa
 
         # action = int(torch.argmax(network_output))
         prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
-        action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
+        # action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
+        action = np.argmax(torch.flatten(network_output).cpu().detach().numpy())
     return action
 
 
@@ -220,10 +268,10 @@ def monte_carlo_exploration(state_history, action_space):
                 ucb_value.append(mean_rewards[-1].to("cpu") + c.MC_EXPLORE_CONST*np.log(total_length)/len(action_indices[-1]))
 
             else:
-                new_action = action
+                ucb_value.append(np.inf)
                 break
 
-            new_action = int(np.argmax(ucb_value))
+        new_action = int(np.argmax(ucb_value))
             # print(ucb_value)
 
     else:

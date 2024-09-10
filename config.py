@@ -10,7 +10,7 @@ DEVICE = (
     else "cpu"
 )
 
-SIZE = 7
+SIZE = 5
 CART_INPUT = 4
 CART_OUTPUT = 2
 GRID_INPUT = SIZE**2*1
@@ -38,7 +38,7 @@ NO_SEGMENTS = 1
 LOAD_EXPLORATION = False
 SAVE_EXPLORATION = True
 DATA_DIR = 'collected_data/'
-PLOT_DIR = '/home/steven/biased_lasso_rl/plots/'
+PLOT_DIR = 'plots/'
 Path("collected_data").mkdir(parents=True, exist_ok=True)
 
  # use command DISPLAY=$(grep nameserver /etc/resolv.conf | awk '{print $2}'):0.0

@@ -1,5 +1,6 @@
 from pathlib import Path
 import torch
+import config as c
 
 DEVICE = (
     "cuda"
@@ -11,9 +12,9 @@ DEVICE = (
 
 CART_INPUT = 4
 CART_OUTPUT = 2
-EPOCHS = 500
+EPISODES = 500
 TAU = 0.01
-EPISODES = 600
+TIME_STEPS = 600
 HIDDEN_NODE_COUNT = 128
 TRAIN_EPOCH = 10
 GAMMA = 0.99
@@ -28,11 +29,11 @@ MINI_BATCH_TRAINING = False
 SAVE_PLOT = False
 EXPLORATION = 500
 EPS_DECLINE = 100
-NO_SEGMENTS = 100
+NO_SEGMENTS = 1
 LOAD_EXPLORATION = False
 SAVE_EXPLORATION = True
-DATA_DIR = '/home/steven/biased_lasso_rl/cartpole_project/collected_data/'
-PLOT_DIR = '/home/steven/biased_lasso_rl/cartpole_project/plots/'
+DATA_DIR = 'cartpole_project/collected_data/'
+PLOT_DIR = 'cartpole_project/plots/'
 Path(DATA_DIR).mkdir(parents=True, exist_ok=True)
 Path(PLOT_DIR).mkdir(parents=True, exist_ok=True)
 

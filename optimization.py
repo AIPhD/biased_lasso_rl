@@ -26,11 +26,10 @@ def optimization_step(network_model,
     criterion = nn.MSELoss()
     optimizer = optim.Adam(network_model.parameters(),
                            lr=learning_rate,
-                           amsgrad=False)
+                           amsgrad=True)
     # optimizer = optim.SGD(network_model.parameters(),
     #                        lr=c.LEARNING_RATE)
     set_size = len(memory_sample)
-    target_net.requires_grad_(requires_grad=False)
 
     if set_size < batch_size:
         return
@@ -54,9 +53,11 @@ def optimization_step(network_model,
         reward_batch = torch.tensor(batch.reward).to(c.DEVICE)
         term_bool = torch.tensor(batch.terminated).to(c.DEVICE)
         q_output = network_model(state_batch).gather(1, action_batch).flatten()
+
         with torch.no_grad():
             target_batch = reward_batch + gamma*term_bool*torch.max(target_net(next_state_batch),
                                                                     1).values
+
         l2_reg = None
         l1_reg = None
 
