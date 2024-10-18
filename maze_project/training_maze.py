@@ -7,8 +7,9 @@ import torch
 import numpy as np
 import gym
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(parent_dir)
-from gym_examples.envs.grid_world import GridWorldEnv
+sys.path.append("/home/ls131416/biased_lasso_rl/gym-examples")
+import gym_examples
+# from gym_examples.envs.grid_world import GridWorldEnv
 # from gym_examples.wrappers import RelativePosition
 
 import optimization as o
@@ -30,8 +31,6 @@ def train_network(network_model,
     #     replay_memory = deque([], maxlen=c.CAPACITY)
 
     target_update_counter = 0
-    exploration_counter = 0
-    eps_decline_counter = 0
 
     if c.LOAD_NETWORK:
         if conv_net:
@@ -51,20 +50,24 @@ def train_network(network_model,
         else:
             source_network = m.MazeFCNetwork().to(c.DEVICE)
             source_network.init_weights_to_zero()
-            transfer_learning = False
+            transfer_learning = True
 
     acc_reward_array = []
     time_steps_required_array = []
+    loss_array = []
+    total_loss_array = []
 
     for t in range(no_segments):
 
         for param in source_network.parameters():
             param.requires_grad = False
 
-        env = gym.make('gym_examples/GridWorld-v0', render_mode=render_mode)
-        action_space = env.action_space
+        eps_decline_counter = 0
+        exploration_counter = 0
         replay_memory = deque([], maxlen=c.CAPACITY)
         for episode in range(c.EPISODES):
+            env = gym.make('gym_examples/GridWorld-v0', render_mode=render_mode)
+            action_space = env.action_space
             obs, _ = env.reset()
             # env.close()
 
@@ -76,17 +79,19 @@ def train_network(network_model,
             print(f"{episode} episodes done.")
             accumulated_reward = 0
             no_time_steps = 0
+            update_q = 0
             mc_explore=False
 
             for i in range(c.TIME_STEPS):
                 env.render()
                 # time.sleep(0.1)
                 # action = env.action_space.sample()
-                epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.05)
+                epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.01)
                 exploration_counter += 1
+                update_q += 1
                 term_bool = 1
 
-                if i > 0 and epsilon > 0.1:
+                if i > 0 and epsilon > 0.01:
                     mc_explore = True
 
                 else:
@@ -122,6 +127,7 @@ def train_network(network_model,
 
                 else:
                     next_state = create_fc_state_vector(next_obs)
+                    # ADD ORDER FUNCTION TO ORDER BY PRIORITY OF REPLAY
                     replay_memory.append(o.Transition(state, action, next_state, reward, term_bool))
 
                 state = next_state
@@ -130,18 +136,21 @@ def train_network(network_model,
                 if t >= 1:
                     transfer_learning = True
 
-                if len(replay_memory) >= c.BATCH_SIZE and len(replay_memory) >= c.EXPLORATION:
-                    o.optimization_step(network_model,
-                                        target_net,
-                                        replay_memory,
-                                        n_segments,
-                                        c.GAMMA,
-                                        c.LEARNING_RATE,
-                                        c.LAMB,
-                                        c.BATCH_SIZE,
-                                        source_network,
-                                        transfer_learning)
+                if len(replay_memory) >= c.BATCH_SIZE and len(replay_memory) >= c.EXPLORATION and update_q >= c.UPDATE_Q:
+                    loss_value, total_loss = o.optimization_step(network_model,
+                                                                 target_net,
+                                                                 replay_memory,
+                                                                 c.GAMMA,
+                                                                 c.LEARNING_RATE,
+                                                                 c.LAMB_LASSO,
+                                                                 c.LAMB_RIDGE,
+                                                                 c.BATCH_SIZE,
+                                                                 source_network,
+                                                                 transfer_learning)
                     target_update_counter += 1
+                    update_q = 0
+                    loss_array.append(loss_value)
+                    total_loss_array.append(total_loss)
 
                     if target_update_counter == c.UPDATE_TARGET:
                         for key in target_net.state_dict():
@@ -165,22 +174,36 @@ def train_network(network_model,
             acc_reward_array.append(accumulated_reward)
             time_steps_required_array.append(no_time_steps)
 
-        torch.save(network_model.state_dict(), c.MODEL_DIR +'source_network_segment_' + str(t))
+        if c.SAVE_NETWORK:
+            torch.save(network_model.state_dict(), c.MODEL_DIR +'source_network_segment_' + str(t))
+
         env.close()
-        for key in target_net.state_dict():
-            source_network.state_dict()[key] = target_net.state_dict()[key]
+        for key in network_model.state_dict():
+            source_network.state_dict()[key] = network_model.state_dict()[key]
+
+        e.plot_nn_weights(network_model, t, c.PLOT_DIR)
+        network_model = m.MazeFCNetwork().to(c.DEVICE)
 
 
     e.plot_cumulative_rewards_per_segment(np.cumsum(np.asarray(acc_reward_array)),
                                           c.EPISODES*no_segments,
                                           c.EPISODES,
                                           c.NO_SEGMENTS,
-                                          directory='maze_plots')
+                                          plot_dir=c.PLOT_DIR)
     e.plot_time_steps_in_maze(time_steps_required_array,
                               c.EPISODES*no_segments,
                               c.EPISODES,
                               c.NO_SEGMENTS,
-                              directory='maze_plots')
+                              plot_dir=c.PLOT_DIR)
+    e.plot_loss_function(loss_array,
+                         len(loss_array),
+                         plot_dir=c.PLOT_DIR)
+    e.plot_loss_function(total_loss_array,
+                         len(total_loss_array),
+                         y_label='Regularized Loss',
+                         plot_suffix='Total_loss_evolution',
+                         plot_dir=c.PLOT_DIR)
+
     return network_model
 
 

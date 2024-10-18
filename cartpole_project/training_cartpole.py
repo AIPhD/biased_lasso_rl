@@ -21,13 +21,19 @@ def train_network(network_model,
     else:
         replay_memory = deque([], maxlen=c.CAPACITY)
 
+    source_network = m.FullConnectedNetwork().to(c.DEVICE)
+    source_network.init_weights_to_zero()
+    transfer_learning = True
     target_update_counter = 0
-    exploration_counter = 0
     eps_decline_counter = 0
     acc_reward_array = []
-
     env = gym.make('CartPole-v1', render_mode=render_mode)
     action_space = env.action_space
+    exploration_counter = 0
+    loss_array = []
+    total_loss_array = []
+    epsilon = 1
+
     for episode in range(c.EPISODES):
         obs, _ = env.reset()
         # env.close()
@@ -39,36 +45,45 @@ def train_network(network_model,
             env.render()
             # time.sleep(0.1)
             # action = env.action_space.sample()
-            epsilon = max(1 - 0.9 * eps_decline_counter/c.EPS_DECLINE, 0.05)
-            exploration_counter += 1
+
+            if exploration_counter >= c.EXPLORATION:
+
+                    epsilon = epsilon * c.EPS_DECLINE_FACTOR
+
+            term_bool = 1
+
             action = select_action(network_model(state),
                                    epsilon)
             next_obs, reward, done, _, _ = env.step(action)
 
             if done:
                 # next_state=None
-                reward = -10
+                # reward = -10
+                term_bool = 0
 
             else:
-                reward = i
+                reward = -1
 
             accumulated_reward = i
 
             next_state = create_fc_state_vector(next_obs)
-            replay_memory.append(o.Transition(state, action, next_state, reward))
+            replay_memory.append(o.Transition(state, action, next_state, reward, term_bool))
             state = next_state
-            n_segments = int(len(replay_memory)/c.BATCH_SIZE)
 
             if len(replay_memory) >= c.BATCH_SIZE:
-                o.optimization_step(network_model,
-                                    target_net,
-                                    replay_memory,
-                                    n_segments,
-                                    c.GAMMA,
-                                    c.LEARNING_RATE,
-                                    c.LAMB,
-                                    c.BATCH_SIZE)
+                loss_value, total_loss = o.optimization_step(network_model,
+                                                             target_net,
+                                                             replay_memory,
+                                                             c.GAMMA,
+                                                             c.LEARNING_RATE,
+                                                             c.LAMB_LASSO,
+                                                             c.LAMB_RIDGE,
+                                                             c.BATCH_SIZE,
+                                                             source_network=source_network,
+                                                             transfer_learning=transfer_learning)
                 target_update_counter += 1
+                loss_array.append(loss_value)
+                total_loss_array.append(total_loss)
 
                 if target_update_counter == c.UPDATE_TARGET:
 
@@ -77,23 +92,31 @@ def train_network(network_model,
 
                     target_update_counter = 0
 
-            if exploration_counter >= c.EXPLORATION:
-
-                if exploration_counter == c.EXPLORATION and c.SAVE_EXPLORATION:
-                    torch.save(replay_memory, c.DATA_DIR + 'exploration_data.pt')
-
-                eps_decline_counter += 1
+            exploration_counter += 1
 
             if done:
                 print(f"Episode finished after {i+1} timesteps.")
                 break
 
         print(f'epsilon = {epsilon}')
-        print(f'Accumulated a total reward of {accumulated_reward}.')
         acc_reward_array.append(accumulated_reward)
         env.close()
 
-    e.plot_cumulative_rewards(np.asarray(acc_reward_array), c.EPOCHS)
+    e.plot_cumulative_rewards_per_segment(np.asarray(acc_reward_array),
+                                          c.EPISODES * 1,
+                                          c.EPISODES,
+                                          1,
+                                          plot_dir=c.PLOT_DIR)
+    e.plot_loss_function(loss_array,
+                         len(loss_array),
+                         plot_dir=c.PLOT_DIR)
+    e.plot_loss_function(total_loss_array,
+                         len(total_loss_array),
+                         y_label='Regularized Loss',
+                         plot_suffix='total_loss',
+                         plot_dir=c.PLOT_DIR)
+    e.plot_nn_weights(network_model, 0, c.PLOT_DIR)
+
     return network_model
 
 
@@ -113,7 +136,7 @@ def create_fc_state_vector(observation):
     return state_vector
 
 
-def select_action(network_output, epsilon, stochastic_selection=True):
+def select_action(network_output, epsilon, stochastic_selection=False):
     '''Calculate, which action to take, with best estimated chance.'''
 
     threshold = np.random.sample()
@@ -130,7 +153,7 @@ def select_action(network_output, epsilon, stochastic_selection=True):
             action = np.random.choice(np.arange(2), p=prob_action.cpu().detach().numpy())
 
         else:
-            action = int(torch.argma(network_output))
+            action = int(torch.argmax(network_output))
 
     return action
 
