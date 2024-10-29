@@ -15,6 +15,7 @@ def optimization_step(network_model,
                       memory_sample,
                       gamma,
                       learning_rate,
+                      momentum=0.9,
                       lamb_lasso=1.0,
                       lamb_ridge=1.0,
                       batch_size=32,
@@ -23,11 +24,13 @@ def optimization_step(network_model,
     "Optimization step given model and collected data."
 
     criterion = nn.MSELoss(reduction='mean')
-    optimizer = optim.Adam(network_model.parameters(),
-                           lr=learning_rate,
-                           amsgrad=True)
-    # optimizer = optim.SGD(network_model.parameters(),
-    #                       lr=learning_rate)
+    # optimizer = optim.Adam(network_model.parameters(),
+    #                        lr=learning_rate,
+    #                        amsgrad=True)
+    optimizer = optim.SGD(network_model.parameters(),
+                          lr=learning_rate,
+                          momentum=momentum)
+    optimizer.zero_grad()
     set_size = len(memory_sample)
 
     if set_size < batch_size:
@@ -65,7 +68,7 @@ def optimization_step(network_model,
         #     for key in network_model.state_dict():
         #         reg_vector.append(network_model.state_dict()[key])
 
-        for name, param in network_param_difference(network_model, source_network):
+        for name, param in network_param_difference(network_model, source_network, transfer_learning):
 
             if l1_reg is None and 'weight' in name:
                 # l2_reg = param.norm(2)**2
@@ -93,7 +96,7 @@ def optimization_step(network_model,
         # print("optimization step concluded")
 
 
-def network_param_difference(target_net, source_net):
+def network_param_difference(target_net, source_net, transfer_learning):
     '''Calculates difference between two networks' parameters for biased regularization'''
 
     target_vector = []
@@ -101,6 +104,11 @@ def network_param_difference(target_net, source_net):
     regularization_vector = []
 
     for param_target, param_source in zip(target_net.named_parameters(), source_net.named_parameters()):
-        regularization_vector = param_target[1] - param_source[1]
+
+        if transfer_learning:
+            regularization_vector = param_target[1] - param_source[1]
+
+        else:
+            regularization_vector = param_target[1]
 
         yield param_target[0], regularization_vector

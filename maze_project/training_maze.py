@@ -1,6 +1,7 @@
 # import time
 import sys
 import os
+import pickle
 import random
 from collections import deque
 import torch
@@ -18,9 +19,7 @@ import evaluation as e
 from maze_project import config_maze as c
 
 
-def train_network(network_model,
-                  target_net,
-                  no_segments=c.NO_SEGMENTS,
+def train_network(no_segments=c.NO_SEGMENTS,
                   render_mode=c.RENDER,
                   conv_net=c.CONVMODEL):
     '''Function to train a model given the collected batch data set.'''
@@ -50,21 +49,48 @@ def train_network(network_model,
         else:
             source_network = m.MazeFCNetwork().to(c.DEVICE)
             source_network.init_weights_to_zero()
-            transfer_learning = True
+            transfer_learning = False
 
-    acc_reward_array = []
     time_steps_required_array = []
-    loss_array = []
-    total_loss_array = []
+
 
     for t in range(no_segments):
+
+        if c.LOAD_SEGMENT:
+        
+            with open(c.DATA_DIR+game_name+'_config_dict.pkl', 'rb') as f:
+                loaded_dict = pickle.load(f)
+
+            exploration_counter = loaded_dict['exploration_counter']
+            eps_decline_counter = loaded_dict['eps_counter']
+            replay_memory = torch.load(c.DATA_DIR + game_name + '_exploration_data.pt')
+            acc_reward_array = torch.load(c.DATA_DIR + game_name + '_rewards.pt')
+            loss_array = torch.load(c.DATA_DIR + game_name + '_loss.pt')
+            total_loss_array = torch.load(c.DATA_DIR + game_name + '_reg_loss.pt')
+            network_model = m.AtariNetwork().to(c.DEVICE)
+            network_model.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
+            network_model.eval()
+            target_net = m.AtariNetwork().to(c.DEVICE)
+            target_net.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
+            target_net.eval()
+
+        else:
+
+            network_model = m.AtariNetwork().to(c.DEVICE)
+            target_net = m.AtariNetwork().to(c.DEVICE)
+            acc_reward_array = []
+            loss_array = []
+            total_loss_array = []
+            eps_decline_counter = 0
+            exploration_counter = 0
+            replay_memory = deque([], maxlen=c.CAPACITY)
+
+        for param in target_net.parameters():
+            param.requires_grad = False
 
         for param in source_network.parameters():
             param.requires_grad = False
 
-        eps_decline_counter = 0
-        exploration_counter = 0
-        replay_memory = deque([], maxlen=c.CAPACITY)
         for episode in range(c.EPISODES):
             env = gym.make('gym_examples/GridWorld-v0', render_mode=render_mode)
             action_space = env.action_space
@@ -142,6 +168,7 @@ def train_network(network_model,
                                                                  replay_memory,
                                                                  c.GAMMA,
                                                                  c.LEARNING_RATE,
+                                                                 c.MOMENTUM,
                                                                  c.LAMB_LASSO,
                                                                  c.LAMB_RIDGE,
                                                                  c.BATCH_SIZE,

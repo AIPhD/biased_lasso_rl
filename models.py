@@ -149,22 +149,21 @@ class AtariNetwork(nn.Module):
     def __init__(self):
 
         super().__init__()
-        self.stacked_layers = nn.Sequential(nn.Conv2d(3, 16, kernel_size=8, stride=4),
+        self.stacked_layers = nn.Sequential(nn.Conv2d(4, 32, kernel_size=8, stride=4),
                                             nn.ReLU(),
-                                            nn.Conv2d(16, 32, kernel_size=5, stride=2),
+                                            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+                                            nn.ReLU(),
+                                            nn.Conv2d(64, 64, kernel_size=3, stride=1),
                                             nn.ReLU(),
                                             nn.Flatten(start_dim=1),
-                                            nn.Linear(3200, 1600),
+                                            nn.Linear(3136, 1600),
                                             nn.ReLU(),
                                             nn.Linear(1600, 256),
                                             nn.ReLU(),
-                                            nn.Linear(256, 5))
+                                            nn.Linear(256, 18))
 
     def forward(self, x_input):
         '''Calculates output of the network given data x_input'''
 
         y_output = self.stacked_layers(x_input)
         return y_output
-
-    def init_fc_weights_to_zero():
-        pass

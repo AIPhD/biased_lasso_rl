@@ -1,4 +1,6 @@
 import random
+import sys
+import pickle
 from collections import deque
 import numpy as np
 import torch
@@ -9,15 +11,13 @@ import evaluation as e
 from atari_project import config_atari as c
 
 
-ATARI_GAMES = [
-               'ALE/Alien-v5',
-            #    'ALE/Centipede-v5',
-            #    'ALE/Jamesbond-v5'
-               ]
+ATARI_GAMES = {
+               # 'Alien': 'ALE/Alien-v5',
+               'Centipede': 'ALE/Centipede-v5',
+               # 'Jamesbond': 'ALE/Jamesbond-v5'
+               }
 
-def train_network(network_model,
-                  target_net,
-                  render_mode=c.RENDER,
+def train_network(render_mode=c.RENDER,
                   games=ATARI_GAMES,
                   transfer_learning=False):
     '''Function to train a model given the collected batch data set.'''
@@ -28,29 +28,67 @@ def train_network(network_model,
     #     replay_memory = deque([], maxlen=c.CAPACITY)
 
     target_update_counter = 0
-    exploration_counter = 0
-    eps_decline_counter = 0
 
     if c.LOAD_NETWORK:
 
         source_network = m.AtariNetwork().to(c.DEVICE)
         source_network.load_state_dict(torch.load(c.MODEL_DIR))
         source_network.eval()
+        transfer_learning = True
 
     else:
         source_network = m.AtariNetwork().to(c.DEVICE)
+        transfer_learning = False
 
-    acc_reward_array = []
-    loss_array = []
-
-    for game in games:
-
-        for param in source_network.parameters():
+    for param in source_network.parameters():
             param.requires_grad = False
 
-        env = gym.make(game, render_mode=render_mode)
+    for game_name, game in games.items():
+
+        if c.LOAD_SEGMENT:
+        
+            with open(c.DATA_DIR+game_name+'_config_dict.pkl', 'rb') as f:
+                loaded_dict = pickle.load(f)
+
+            exploration_counter = loaded_dict['exploration_counter']
+            eps_decline_counter = loaded_dict['eps_counter']
+            replay_memory = torch.load(c.DATA_DIR + game_name + '_exploration_data.pt')
+            acc_reward_array = torch.load(c.DATA_DIR + game_name + '_rewards.pt')
+            loss_array = torch.load(c.DATA_DIR + game_name + '_loss.pt')
+            total_loss_array = torch.load(c.DATA_DIR + game_name + '_reg_loss.pt')
+            network_model = m.AtariNetwork().to(c.DEVICE)
+            network_model.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
+            network_model.eval()
+            target_net = m.AtariNetwork().to(c.DEVICE)
+            target_net.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
+            target_net.eval()
+
+        else:
+
+            network_model = m.AtariNetwork().to(c.DEVICE)
+            target_net = m.AtariNetwork().to(c.DEVICE)
+            acc_reward_array = []
+            loss_array = []
+            total_loss_array = []
+            eps_decline_counter = 0
+            exploration_counter = 0
+            replay_memory = deque([], maxlen=c.CAPACITY)
+
+        for param in target_net.parameters():
+            param.requires_grad = False
+
+        env = gym.make(game, render_mode=render_mode, frameskip=1)
+        env = gym.wrappers.AtariPreprocessing(env,
+                                              noop_max=30,
+                                              frame_skip=c.FRAME_SKIP,
+                                              screen_size=84,
+                                              terminal_on_life_loss=False,
+                                              grayscale_obs=True,
+                                              grayscale_newaxis=False,
+                                              scale_obs=False)
+        env = gym.wrappers.FrameStack(env, 4)
         action_space = env.action_space
-        replay_memory = deque([], maxlen=c.CAPACITY)
+
         for episode in range(c.EPISODES):
             obs, _ = env.reset()
             # env.close()
@@ -72,7 +110,7 @@ def train_network(network_model,
                                        range(action_space.n))
                 next_obs, reward, done, _, _ = env.step(action)
 
-                if done or i==c.TIME_STEPS - 1:
+                if done:
                     term_bool = 0
 
                 accumulated_reward += reward
@@ -83,21 +121,24 @@ def train_network(network_model,
                                      reward,
                                      term_bool))
                 state = next_state
+                update_q += 1
 
                 if len(replay_memory) >= c.BATCH_SIZE and len(replay_memory) >= c.EXPLORATION and update_q >= c.UPDATE_Q:
-                    loss_value = o.optimization_step(network_model,
-                                                     target_net,
-                                                     replay_memory,
-                                                     c.GAMMA,
-                                                     c.LEARNING_RATE,
-                                                     c.LAMB_LASSO,
-                                                     c.LAMB_RIDGE,
-                                                     c.BATCH_SIZE,
-                                                     source_network,
-                                                     transfer_learning)
+                    loss_value, total_loss = o.optimization_step(network_model,
+                                                                 target_net,
+                                                                 replay_memory,
+                                                                 c.GAMMA,
+                                                                 c.LEARNING_RATE,
+                                                                 c.MOMENTUM,
+                                                                 c.LAMB_LASSO,
+                                                                 c.LAMB_RIDGE,
+                                                                 c.BATCH_SIZE,
+                                                                 source_network,
+                                                                 transfer_learning)
                     target_update_counter += 1
-                    update_q += 1
                     loss_array.append(loss_value)
+                    total_loss_array.append(total_loss)
+                    update_q = 0
 
                     if target_update_counter == c.UPDATE_TARGET:
                         for key in target_net.state_dict():
@@ -106,9 +147,6 @@ def train_network(network_model,
                         target_update_counter = 0
 
                 if exploration_counter >= c.EXPLORATION:
-
-                    if exploration_counter == c.EXPLORATION and c.SAVE_EXPLORATION:
-                        torch.save(replay_memory, c.DATA_DIR + 'exploration_data.pt')
 
                     eps_decline_counter += 1
 
@@ -120,22 +158,40 @@ def train_network(network_model,
             print(f'Accumulated a total reward of {accumulated_reward}.')
             acc_reward_array.append(accumulated_reward)
 
-        if c.SAVE_NETWORK:
-            torch.save(network_model.state_dict(), c.MODEL_DIR +'source_network_segment_' + game)
-
         env.close()
 
         for key in target_net.state_dict():
             source_network.state_dict()[key] = target_net.state_dict()[key]
 
+    if c.SAVE_SEGMENT:
 
-    e.plot_cumulative_rewards_per_segment(np.cumsum(np.asarray(acc_reward_array)),
-                                          c.EPISODES*no_segments,
-                                          c.EPISODES,
-                                          c.NO_SEGMENTS,
+        config_dict = {
+                        "eps_counter": eps_decline_counter,
+                        "exploration_counter": exploration_counter
+                        }
+
+        with open(c.DATA_DIR + game_name+'_config_dict.pkl', 'wb') as f:
+            pickle.dump(config_dict, f)
+
+        torch.save(network_model.state_dict(), c.MODEL_DIR + game_name + '_model')
+        torch.save(replay_memory, c.DATA_DIR + game_name + '_exploration_data.pt')
+        torch.save(acc_reward_array, c.DATA_DIR + game_name + '_rewards.pt')
+        torch.save(loss_array, c.DATA_DIR + game_name + '_loss.pt')
+        torch.save(total_loss_array, c.DATA_DIR + game_name + '_reg_loss.pt')
+
+
+    e.plot_cumulative_rewards_per_segment(np.asarray(acc_reward_array),
+                                          len(np.asarray(acc_reward_array))*len(ATARI_GAMES),
+                                          len(np.asarray(acc_reward_array)),
+                                          len(ATARI_GAMES),
                                           plot_dir=c.PLOT_DIR)
     e.plot_loss_function(loss_array,
                          len(loss_array),
+                         plot_dir=c.PLOT_DIR)
+    e.plot_loss_function(total_loss_array,
+                         len(total_loss_array),
+                         y_label='Regularized Loss',
+                         plot_suffix='Total_loss_evolution',
                          plot_dir=c.PLOT_DIR)
 
     return network_model
@@ -144,8 +200,8 @@ def train_network(network_model,
 def create_conv_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for convolutional NN.'''
 
-    state_vector = torch.zeros(1, 3, 96, 96).to(c.DEVICE)
-    state_vector[0] = torch.from_numpy(np.reshape(observation, (3, 96,96)))
+    state_vector = torch.zeros(1, 4, 84, 84).to(c.DEVICE)
+    state_vector[0] = torch.from_numpy(np.reshape(observation, (4, 84, 84)))
     return state_vector
 
 
@@ -160,7 +216,8 @@ def select_action(network_output, epsilon, state_history, action_space):
 
     else:
         if torch.max(network_output).isnan():
-            print('Nan Value detected')
+
+            sys.exit("Nan Value detected, Network diverged.")
 
         # action = int(torch.argmax(network_output))
         # prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
