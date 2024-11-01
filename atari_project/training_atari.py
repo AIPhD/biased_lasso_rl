@@ -14,7 +14,8 @@ from atari_project import config_atari as c
 ATARI_GAMES = {
                # 'Alien': 'ALE/Alien-v5',
                'Centipede': 'ALE/Centipede-v5',
-               # 'Jamesbond': 'ALE/Jamesbond-v5'
+               # 'Jamesbond': 'ALE/Jamesbond-v5',
+               # 'Pong': 'ALE/Pong-v5'
                }
 
 def train_network(render_mode=c.RENDER,
@@ -27,7 +28,6 @@ def train_network(render_mode=c.RENDER,
     # else:
     #     replay_memory = deque([], maxlen=c.CAPACITY)
 
-    target_update_counter = 0
 
     if c.LOAD_NETWORK:
 
@@ -52,6 +52,7 @@ def train_network(render_mode=c.RENDER,
 
             exploration_counter = loaded_dict['exploration_counter']
             eps_decline_counter = loaded_dict['eps_counter']
+            target_update_counter = loaded_dict['target_update_counter']
             replay_memory = torch.load(c.DATA_DIR + game_name + '_exploration_data.pt')
             acc_reward_array = torch.load(c.DATA_DIR + game_name + '_rewards.pt')
             loss_array = torch.load(c.DATA_DIR + game_name + '_loss.pt')
@@ -60,7 +61,7 @@ def train_network(render_mode=c.RENDER,
             network_model.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
             network_model.eval()
             target_net = m.AtariNetwork().to(c.DEVICE)
-            target_net.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
+            target_net.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_target_model'))
             target_net.eval()
 
         else:
@@ -72,6 +73,7 @@ def train_network(render_mode=c.RENDER,
             total_loss_array = []
             eps_decline_counter = 0
             exploration_counter = 0
+            target_update_counter = 0
             replay_memory = deque([], maxlen=c.CAPACITY)
 
         for param in target_net.parameters():
@@ -93,7 +95,6 @@ def train_network(render_mode=c.RENDER,
             obs, _ = env.reset()
             # env.close()
             state = create_conv_state_vector(obs)
-            print(f"{episode} episodes done.")
             accumulated_reward = 0
             update_q = 0
 
@@ -154,26 +155,25 @@ def train_network(render_mode=c.RENDER,
                     print(f"Episode finished after {i+1} timesteps.")
                     break
 
+            print(f"{episode + 1} episode(s) done.")
             print(f'epsilon = {epsilon}')
             print(f'Accumulated a total reward of {accumulated_reward}.')
             acc_reward_array.append(accumulated_reward)
 
         env.close()
 
-        for key in target_net.state_dict():
-            source_network.state_dict()[key] = target_net.state_dict()[key]
-
     if c.SAVE_SEGMENT:
 
         config_dict = {
                         "eps_counter": eps_decline_counter,
-                        "exploration_counter": exploration_counter
-                        }
+                        "exploration_counter": exploration_counter,
+                        "target_update_counter": target_update_counter}
 
         with open(c.DATA_DIR + game_name+'_config_dict.pkl', 'wb') as f:
             pickle.dump(config_dict, f)
 
         torch.save(network_model.state_dict(), c.MODEL_DIR + game_name + '_model')
+        torch.save(target_net.state_dict(), c.MODEL_DIR + game_name + '_target_model')
         torch.save(replay_memory, c.DATA_DIR + game_name + '_exploration_data.pt')
         torch.save(acc_reward_array, c.DATA_DIR + game_name + '_rewards.pt')
         torch.save(loss_array, c.DATA_DIR + game_name + '_loss.pt')

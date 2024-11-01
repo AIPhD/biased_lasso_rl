@@ -4,7 +4,7 @@ import config as c
 
 DEVICE = c.DEVICE
 SIZE = 5
-GRID_INPUT = SIZE**2*3
+GRID_INPUT = SIZE**2*5
 GRID_OUTPUT = 4
 EPISODES = 100
 CONV_KERNEL = 2
@@ -34,7 +34,9 @@ LOAD_EXPLORATION = False
 SAVE_EXPLORATION = False
 SAVE_NETWORK = False
 LOAD_NETWORK = False
-DATA_DIR = 'collected_data/'
+LOAD_SEGMENT = False
+SAVE_SEGMENT = True
+DATA_DIR = 'maze_project/data/'
 PLOT_DIR = 'maze_project/plots'
 MODEL_DIR = 'maze_project/saved_models/'
 Path("collected_data").mkdir(parents=True, exist_ok=True)

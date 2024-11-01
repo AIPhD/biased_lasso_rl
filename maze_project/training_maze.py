@@ -19,17 +19,16 @@ import evaluation as e
 from maze_project import config_maze as c
 
 
+GAME_TASKS = {'pathfinding': 'Paths',
+              'coincollecting': 'Coins',
+              'trapavoiding': 'Traps',
+              'mazenavigating': 'Maze'}
+
+
 def train_network(no_segments=c.NO_SEGMENTS,
                   render_mode=c.RENDER,
                   conv_net=c.CONVMODEL):
     '''Function to train a model given the collected batch data set.'''
-
-    # if c.LOAD_EXPLORATION:
-    #     replay_memory = torch.load(c.DATA_DIR + 'exploration_data.pt')
-    # else:
-    #     replay_memory = deque([], maxlen=c.CAPACITY)
-
-    target_update_counter = 0
 
     if c.LOAD_NETWORK:
         if conv_net:
@@ -43,6 +42,7 @@ def train_network(no_segments=c.NO_SEGMENTS,
         transfer_learning = True
 
     else:
+
         if conv_net:
             source_network = m.ConvNetwork().to(c.DEVICE)
 
@@ -54,7 +54,7 @@ def train_network(no_segments=c.NO_SEGMENTS,
     time_steps_required_array = []
 
 
-    for t in range(no_segments):
+    for game_name, game in GAME_TASKS.items():
 
         if c.LOAD_SEGMENT:
         
@@ -63,26 +63,28 @@ def train_network(no_segments=c.NO_SEGMENTS,
 
             exploration_counter = loaded_dict['exploration_counter']
             eps_decline_counter = loaded_dict['eps_counter']
+            target_update_counter = loaded_dict['target_update_counter']
             replay_memory = torch.load(c.DATA_DIR + game_name + '_exploration_data.pt')
             acc_reward_array = torch.load(c.DATA_DIR + game_name + '_rewards.pt')
             loss_array = torch.load(c.DATA_DIR + game_name + '_loss.pt')
             total_loss_array = torch.load(c.DATA_DIR + game_name + '_reg_loss.pt')
-            network_model = m.AtariNetwork().to(c.DEVICE)
+            network_model = m.MazeFCNetwork().to(c.DEVICE)
             network_model.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
             network_model.eval()
-            target_net = m.AtariNetwork().to(c.DEVICE)
-            target_net.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
+            target_net = m.MazeFCNetwork().to(c.DEVICE)
+            target_net.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_target_model'))
             target_net.eval()
 
         else:
 
-            network_model = m.AtariNetwork().to(c.DEVICE)
-            target_net = m.AtariNetwork().to(c.DEVICE)
+            network_model = m.MazeFCNetwork().to(c.DEVICE)
+            target_net = m.MazeFCNetwork().to(c.DEVICE)
             acc_reward_array = []
             loss_array = []
             total_loss_array = []
             eps_decline_counter = 0
             exploration_counter = 0
+            target_update_counter = 0
             replay_memory = deque([], maxlen=c.CAPACITY)
 
         for param in target_net.parameters():
@@ -131,15 +133,8 @@ def train_network(no_segments=c.NO_SEGMENTS,
                 next_obs, reward, done, _, _ = env.step(action)
                 no_time_steps += 1
 
-                if done or i==c.TIME_STEPS - 1:
+                if done:
                     term_bool = 0
-
-                # if done:
-                #     # next_state=None
-                #     reward = -1
-
-                # else:
-                #     reward = i
 
                 accumulated_reward += reward
 
@@ -158,9 +153,6 @@ def train_network(no_segments=c.NO_SEGMENTS,
 
                 state = next_state
                 n_segments = int(len(replay_memory)/c.BATCH_SIZE)
-
-                if t >= 1:
-                    transfer_learning = True
 
                 if len(replay_memory) >= c.BATCH_SIZE and len(replay_memory) >= c.EXPLORATION and update_q >= c.UPDATE_Q:
                     loss_value, total_loss = o.optimization_step(network_model,
@@ -202,7 +194,7 @@ def train_network(no_segments=c.NO_SEGMENTS,
             time_steps_required_array.append(no_time_steps)
 
         if c.SAVE_NETWORK:
-            torch.save(network_model.state_dict(), c.MODEL_DIR +'source_network_segment_' + str(t))
+            torch.save(network_model.state_dict(), c.MODEL_DIR +'source_network_segment_' + game_name)
 
         env.close()
         for key in network_model.state_dict():
@@ -210,6 +202,23 @@ def train_network(no_segments=c.NO_SEGMENTS,
 
         e.plot_nn_weights(network_model, t, c.PLOT_DIR)
         network_model = m.MazeFCNetwork().to(c.DEVICE)
+
+    if c.SAVE_SEGMENT:
+
+        config_dict = {
+                        "eps_counter": eps_decline_counter,
+                        "exploration_counter": exploration_counter,
+                        "target_update_counter": target_update_counter}
+
+        with open(c.DATA_DIR + game_name+'_config_dict.pkl', 'wb') as f:
+            pickle.dump(config_dict, f)
+
+        torch.save(network_model.state_dict(), c.MODEL_DIR + game_name + '_model')
+        torch.save(target_net.state_dict(), c.MODEL_DIR + game_name + '_target_model')
+        torch.save(replay_memory, c.DATA_DIR + game_name + '_exploration_data.pt')
+        torch.save(acc_reward_array, c.DATA_DIR + game_name + '_rewards.pt')
+        torch.save(loss_array, c.DATA_DIR + game_name + '_loss.pt')
+        torch.save(total_loss_array, c.DATA_DIR + game_name + '_reg_loss.pt')
 
 
     e.plot_cumulative_rewards_per_segment(np.cumsum(np.asarray(acc_reward_array)),
@@ -246,10 +255,19 @@ def train_network(no_segments=c.NO_SEGMENTS,
 def create_fc_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
-    state_vector = torch.zeros(3, c.SIZE, c.SIZE).to(c.DEVICE)
+    state_vector = torch.zeros(5, c.SIZE, c.SIZE).to(c.DEVICE)
     state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
     state_vector[1, observation['target'][0], observation['target'][1]] = 1
-    state_vector[2, observation['walls'][0], observation['walls'][1]] = 1
+
+    for coin in observation['coins']:
+        state_vector[2, coin[0], coin[1]] = 1
+
+    for trap in observation['traps']:
+        state_vector[2, trap[0], trap[1]] = 1
+
+    for wall in observation['walls']:
+        state_vector[2, wall[0], wall[1]] = 1
+
     state_vector = torch.flatten(state_vector)
 
     return state_vector
@@ -261,7 +279,9 @@ def create_conv_state_vector(observation):
     state_vector = torch.zeros(1, 3, c.SIZE, c.SIZE).to(c.DEVICE)
     state_vector[0, 0, observation['agent'][0], observation['agent'][1]] = 1
     state_vector[0, 1, observation['target'][0], observation['target'][1]] = 1
-    state_vector[0, 2, observation['walls'][0], observation['walls'][1]] = 1
+    state_vector[0, 2, observation['coins'][0], observation['coins'][1]] = 1
+    state_vector[0, 3, observation['traps'][0], observation['traps'][1]] = 1
+    state_vector[0, 4, observation['walls'][0], observation['walls'][1]] = 1
 
     return state_vector
 
