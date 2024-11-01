@@ -19,10 +19,15 @@ import evaluation as e
 from maze_project import config_maze as c
 
 
-GAME_TASKS = {'pathfinding': 'Paths',
-              'coincollecting': 'Coins',
-              'trapavoiding': 'Traps',
-              'mazenavigating': 'Maze'}
+GAME_TASKS = {# 'pathfinding': [0, 0, 0],
+              'coincollecting': [1, 0, 0],
+              # 'trapavoiding': [0, 1, 0],
+              # 'mazenavigating': [0, 0, 1],
+              # 'coinsandtraps': [1, 1, 0],
+              # 'coinsinmaze': [1, 0, 1],
+              # 'trapsinmaze': [0, 0, 1],
+              # 'completetask': [1, 1, 1]
+              }
 
 
 def train_network(no_segments=c.NO_SEGMENTS,
@@ -94,7 +99,7 @@ def train_network(no_segments=c.NO_SEGMENTS,
             param.requires_grad = False
 
         for episode in range(c.EPISODES):
-            env = gym.make('gym_examples/GridWorld-v0', render_mode=render_mode)
+            env = gym.make('gym_examples/GridWorld-v0', game=game, render_mode=render_mode)
             action_space = env.action_space
             obs, _ = env.reset()
             # env.close()
@@ -200,7 +205,7 @@ def train_network(no_segments=c.NO_SEGMENTS,
         for key in network_model.state_dict():
             source_network.state_dict()[key] = network_model.state_dict()[key]
 
-        e.plot_nn_weights(network_model, t, c.PLOT_DIR)
+        e.plot_nn_weights(network_model, game_name, c.PLOT_DIR)
         network_model = m.MazeFCNetwork().to(c.DEVICE)
 
     if c.SAVE_SEGMENT:
