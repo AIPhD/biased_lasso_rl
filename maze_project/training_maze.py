@@ -20,8 +20,8 @@ from maze_project import config_maze as c
 
 
 GAME_TASKS = {# 'pathfinding': [0, 0, 0],
-              'coincollecting': [1, 0, 0],
-              # 'trapavoiding': [0, 1, 0],
+              # 'coincollecting': [1, 0, 0],
+              'trapavoiding': [0, 1, 0],
               # 'mazenavigating': [0, 0, 1],
               # 'coinsandtraps': [1, 1, 0],
               # 'coinsinmaze': [1, 0, 1],
@@ -42,7 +42,7 @@ def train_network(no_segments=c.NO_SEGMENTS,
         else:
             source_network = m.MazeFCNetwork().to(c.DEVICE)
 
-        source_network.load_state_dict(torch.load(c.MODEL_DIR + 'source_network_segment_0'))
+        source_network.load_state_dict(torch.load(c.MODEL_DIR + 'pathfinding_model'))
         source_network.eval()
         transfer_learning = True
 
@@ -184,9 +184,6 @@ def train_network(no_segments=c.NO_SEGMENTS,
 
                 if exploration_counter >= c.EXPLORATION:
 
-                    if exploration_counter == c.EXPLORATION and c.SAVE_EXPLORATION:
-                        torch.save(replay_memory, c.DATA_DIR + 'exploration_data.pt')
-
                     eps_decline_counter += 1
 
                 if done:
@@ -198,10 +195,8 @@ def train_network(no_segments=c.NO_SEGMENTS,
             acc_reward_array.append(accumulated_reward)
             time_steps_required_array.append(no_time_steps)
 
-        if c.SAVE_NETWORK:
-            torch.save(network_model.state_dict(), c.MODEL_DIR +'source_network_segment_' + game_name)
-
         env.close()
+
         for key in network_model.state_dict():
             source_network.state_dict()[key] = network_model.state_dict()[key]
 
@@ -226,14 +221,14 @@ def train_network(no_segments=c.NO_SEGMENTS,
         torch.save(total_loss_array, c.DATA_DIR + game_name + '_reg_loss.pt')
 
 
-    e.plot_cumulative_rewards_per_segment(np.cumsum(np.asarray(acc_reward_array)),
-                                          c.EPISODES*no_segments,
-                                          c.EPISODES,
+    e.plot_cumulative_rewards_per_segment(np.asarray(acc_reward_array),
+                                          len(np.asarray(acc_reward_array))*no_segments,
+                                          len(np.asarray(acc_reward_array)),
                                           c.NO_SEGMENTS,
                                           plot_dir=c.PLOT_DIR)
     e.plot_time_steps_in_maze(time_steps_required_array,
-                              c.EPISODES*no_segments,
-                              c.EPISODES,
+                              len(time_steps_required_array)*no_segments,
+                              len(time_steps_required_array),
                               c.NO_SEGMENTS,
                               plot_dir=c.PLOT_DIR)
     e.plot_loss_function(loss_array,

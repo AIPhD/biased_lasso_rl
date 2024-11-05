@@ -141,12 +141,13 @@ def plot_nn_weights(fc_network, seg_ind, dir):
     '''Plot the weights of given neural network in a heatmap.'''
 
     for key in fc_network.state_dict():
+
         weights = fc_network.state_dict()[key].detach().cpu().numpy()
 
         if isinstance(weights[0], np.float32):
             weights = weights[:, np.newaxis]
 
-        plt.imshow(weights, cmap='seismic')
+        plt.imshow(weights, cmap='seismic', vmin=-np.max(np.abs(weights)), vmax=np.max(np.abs(weights)))
         plt.colorbar()
         plt.savefig(f'{dir}/{key}_{seg_ind}.pdf', dpi=300)
         plt.close()
