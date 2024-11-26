@@ -19,14 +19,15 @@ import evaluation as e
 from maze_project import config_maze as c
 
 
-GAME_TASKS = {# 'pathfinding': [0, 0, 0],
-              # 'coincollecting': [1, 0, 0],
-              'trapavoiding': [0, 1, 0],
-              # 'mazenavigating': [0, 0, 1],
-              # 'coinsandtraps': [1, 1, 0],
-              # 'coinsinmaze': [1, 0, 1],
-              # 'trapsinmaze': [0, 0, 1],
-              # 'completetask': [1, 1, 1]
+GAME_TASKS = {# 'pathfinding': [1, 0, 0, 0],
+              # 'coincollecting': [1, 1, 0, 0],
+              'onlycoincollecting': [0, 1, 0, 0],
+              # 'trapavoiding': [1, 0, 1, 0],
+              # 'mazenavigating': [1, 0, 0, 1],
+              # 'coinsandtraps': [1, 1, 1, 0],
+              # 'coinsinmaze': [1, 1, 0, 1],
+              # 'trapsinmaze': [1, 0, 1, 1],
+              # 'completetask': [1, 1, 1, 1]
               }
 
 
@@ -101,7 +102,7 @@ def train_network(no_segments=c.NO_SEGMENTS,
         for episode in range(c.EPISODES):
             env = gym.make('gym_examples/GridWorld-v0', game=game, render_mode=render_mode)
             action_space = env.action_space
-            obs, _ = env.reset()
+            obs = env.reset()
             # env.close()
 
             if conv_net:
@@ -135,7 +136,7 @@ def train_network(no_segments=c.NO_SEGMENTS,
                                        mc_explore,
                                        replay_memory,
                                        range(action_space.n))
-                next_obs, reward, done, _, _ = env.step(action)
+                next_obs, reward, done,_, _ = env.step(action)
                 no_time_steps += 1
 
                 if done:
@@ -257,7 +258,10 @@ def create_fc_state_vector(observation):
 
     state_vector = torch.zeros(5, c.SIZE, c.SIZE).to(c.DEVICE)
     state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
-    state_vector[1, observation['target'][0], observation['target'][1]] = 1
+    # state_vector[1, observation['target'][0], observation['target'][1]] = 1
+
+    for target in observation['target']:
+        state_vector[1, target[0], target[1]] = 1
 
     for coin in observation['coins']:
         state_vector[2, coin[0], coin[1]] = 1

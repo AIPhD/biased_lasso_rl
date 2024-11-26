@@ -20,9 +20,9 @@ class FullConnectedNetwork(nn.Module):
         # self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
         self.layer1 = nn.Linear(cc.CART_INPUT, cc.HIDDEN_NODE_COUNT)
         self.layer2 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
-        self.layer3 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
-        self.layer4 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
-        self.layer5 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
+        # self.layer3 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
+        # self.layer4 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
+        # self.layer5 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
         self.layern = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.CART_OUTPUT)
 
 
@@ -32,7 +32,7 @@ class FullConnectedNetwork(nn.Module):
         x_input = nn.functional.relu(self.layer2(x_input))
         # x_input = nn.functional.relu(self.layer3(x_input))
         # x_input = nn.functional.relu(self.layer4(x_input))
-        x_input = nn.functional.relu(self.layer5(x_input))
+        # x_input = nn.functional.relu(self.layer5(x_input))
         return self.layern(x_input)
 
     def init_weights_to_zero(self):
@@ -40,12 +40,12 @@ class FullConnectedNetwork(nn.Module):
         self.layer1.bias.data = torch.zeros(cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
         self.layer2.weight.data = torch.zeros(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
         self.layer2.bias.data = torch.zeros(cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
-        self.layer3.weight.data = torch.zeros(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
-        self.layer3.bias.data = torch.zeros(cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
-        self.layer4.weight.data = torch.zeros(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
-        self.layer4.bias.data = torch.zeros(cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
-        self.layer5.weight.data = torch.zeros(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
-        self.layer5.bias.data = torch.zeros(cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
+        # self.layer3.weight.data = torch.zeros(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
+        # self.layer3.bias.data = torch.zeros(cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
+        # self.layer4.weight.data = torch.zeros(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
+        # self.layer4.bias.data = torch.zeros(cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
+        # self.layer5.weight.data = torch.zeros(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
+        # self.layer5.bias.data = torch.zeros(cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
         self.layern.weight.data = torch.zeros(cc.CART_OUTPUT, cc.HIDDEN_NODE_COUNT).to(cc.DEVICE)
         self.layern.bias.data = torch.zeros(cc.CART_OUTPUT).to(cc.DEVICE)
 

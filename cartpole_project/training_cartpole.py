@@ -9,26 +9,22 @@ import optimization as o
 import models as m
 import evaluation as e
 
-def train_network(network_model,
-                  target_net,
-                  render_mode=c.RENDER):
+def train_network(render_mode=c.RENDER):
     '''Function to train a model given the collected batch data set.'''
 
-    # env = gym.make('Pong-v0')
-    # wrapped_env = RelativePosition(env)
-    if c.LOAD_EXPLORATION:
-        replay_memory = torch.load(c.DATA_DIR + 'exploration_data.pt')
-    else:
-        replay_memory = deque([], maxlen=c.CAPACITY)
+    network_model = m.FullConnectedNetwork().to(c.DEVICE)
+    target_net = m.FullConnectedNetwork().to(c.DEVICE)
 
+    for param in target_net.parameters():
+        param.requires_grad = False
+
+    replay_memory = deque([], maxlen=c.CAPACITY)
     source_network = m.FullConnectedNetwork().to(c.DEVICE)
     source_network.init_weights_to_zero()
-    transfer_learning = True
+    transfer_learning = False
     target_update_counter = 0
-    eps_decline_counter = 0
     acc_reward_array = []
     env = gym.make('CartPole-v1', render_mode=render_mode)
-    action_space = env.action_space
     exploration_counter = 0
     loss_array = []
     total_loss_array = []
@@ -36,7 +32,6 @@ def train_network(network_model,
 
     for episode in range(c.EPISODES):
         obs, _ = env.reset()
-        # env.close()
         state = create_fc_state_vector(obs)
         print(f"{episode} episodes done.")
         accumulated_reward = 0
@@ -48,24 +43,17 @@ def train_network(network_model,
 
             if exploration_counter >= c.EXPLORATION:
 
-                    epsilon = epsilon * c.EPS_DECLINE_FACTOR
+                    epsilon = max(0.1, epsilon * c.EPS_DECLINE_FACTOR)
 
             term_bool = 1
-
-            action = select_action(network_model(state),
-                                   epsilon)
+            action = select_action(network_model(state), epsilon)
             next_obs, reward, done, _, _ = env.step(action)
 
             if done:
-                # next_state=None
-                # reward = -10
                 term_bool = 0
-
-            else:
-                reward = -1
+                reward = 1
 
             accumulated_reward = i
-
             next_state = create_fc_state_vector(next_obs)
             replay_memory.append(o.Transition(state, action, next_state, reward, term_bool))
             state = next_state
@@ -76,6 +64,7 @@ def train_network(network_model,
                                                              replay_memory,
                                                              c.GAMMA,
                                                              c.LEARNING_RATE,
+                                                             c.MOMENTUM,
                                                              c.LAMB_LASSO,
                                                              c.LAMB_RIDGE,
                                                              c.BATCH_SIZE,
@@ -120,20 +109,11 @@ def train_network(network_model,
     return network_model
 
 
-# def offline_initialization(network_model,
-#                            target_model,
-#                            replay_memory,
-#                            n_epochs=100,
-#                            batch_size=50):
-#     '''Use saved replay memory data to do offline training in an initialization phase.'''
-#     pass
-
-
 def create_fc_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
     state_vector = torch.Tensor(observation).to(c.DEVICE)
-    return state_vector
+    return normalize_state(state_vector)
 
 
 def select_action(network_output, epsilon, stochastic_selection=False):
@@ -154,7 +134,17 @@ def select_action(network_output, epsilon, stochastic_selection=False):
 
         else:
             action = int(torch.argmax(network_output))
+            # print(action)
 
     return action
 
-# %%
+def normalize_state(state):
+    '''Normalize state variable before the optimization step.'''
+
+    state[0] /= 2.5
+    state[1] /= 2.5
+    state[2] /= 0.3
+    state[3] /= 0.3
+
+    return state
+    
