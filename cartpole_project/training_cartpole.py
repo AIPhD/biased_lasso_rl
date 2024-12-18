@@ -43,7 +43,7 @@ def train_network(render_mode=c.RENDER):
 
             if exploration_counter >= c.EXPLORATION:
 
-                    epsilon = max(0.1, epsilon * c.EPS_DECLINE_FACTOR)
+                    epsilon = max(c.EPS_MIN, epsilon * c.EPS_DECLINE_FACTOR)
 
             term_bool = 1
             action = select_action(network_model(state), epsilon)
@@ -55,7 +55,7 @@ def train_network(render_mode=c.RENDER):
 
             accumulated_reward = i
             next_state = create_fc_state_vector(next_obs)
-            replay_memory.append(o.Transition(state, action, next_state, reward, term_bool))
+            replay_memory.append(o.Transition(state, action, next_state, 1*reward, term_bool))
             state = next_state
 
             if len(replay_memory) >= c.BATCH_SIZE:
@@ -141,10 +141,10 @@ def select_action(network_output, epsilon, stochastic_selection=False):
 def normalize_state(state):
     '''Normalize state variable before the optimization step.'''
 
-    state[0] /= 2.5
-    state[1] /= 2.5
-    state[2] /= 0.3
-    state[3] /= 0.3
+    # state[0] /= 4.8
+    # state[1] /= 2.5
+    # state[2] /= 0.418
+    # state[3] /= 0.3
 
     return state
     

@@ -9,9 +9,7 @@ import evaluation as e
 from racing_project import config_race as c
 
 
-def train_network(network_model,
-                  target_net,
-                  no_segments=c.NO_SEGMENTS,
+def train_network(no_segments=c.NO_SEGMENTS,
                   render_mode=c.RENDER):
     '''Function to train a model given the collected batch data set.'''
 
@@ -19,6 +17,13 @@ def train_network(network_model,
     #     replay_memory = torch.load(c.DATA_DIR + 'exploration_data.pt')
     # else:
     #     replay_memory = deque([], maxlen=c.CAPACITY)
+
+    network_model = m.RacingNetwork().to(c.DEVICE)
+    target_net = m.RacingNetwork().to(c.DEVICE)
+
+    for param in target_net.parameters():
+        param.requires_grad = False
+
 
     target_update_counter = 0
     exploration_counter = 0

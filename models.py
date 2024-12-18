@@ -18,12 +18,12 @@ class FullConnectedNetwork(nn.Module):
         #                                     nn.ReLU(),
         #                                     nn.Linear(16, c.OUTPUT))
         # self.y_output = torch.Tensor(np.zeros(c.OUTPUT))
-        self.layer1 = nn.Linear(cc.CART_INPUT, cc.HIDDEN_NODE_COUNT)
-        self.layer2 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
+        self.layer1 = nn.Linear(cc.CART_INPUT, 64)
+        self.layer2 = nn.Linear(64, 64)
         # self.layer3 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
         # self.layer4 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
         # self.layer5 = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.HIDDEN_NODE_COUNT)
-        self.layern = nn.Linear(cc.HIDDEN_NODE_COUNT, cc.CART_OUTPUT)
+        self.layern = nn.Linear(64, cc.CART_OUTPUT)
 
 
     def forward(self, x_input):
@@ -161,6 +161,58 @@ class AtariNetwork(nn.Module):
                                             nn.Linear(1600, 256),
                                             nn.ReLU(),
                                             nn.Linear(256, 18))
+
+    def forward(self, x_input):
+        '''Calculates output of the network given data x_input'''
+
+        y_output = self.stacked_layers(x_input)
+        return y_output
+
+
+class AtariPolicyNetwork(nn.Module):
+    '''Policy-Net for Atari game environments using A3C'''
+
+    def __init__(self):
+
+        super().__init__()
+        self.stacked_layers = nn.Sequential(nn.Conv2d(4, 32, kernel_size=8, stride=4),
+                                            nn.ReLU(),
+                                            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+                                            nn.ReLU(),
+                                            nn.Conv2d(64, 64, kernel_size=3, stride=1),
+                                            nn.ReLU(),
+                                            nn.Flatten(start_dim=1),
+                                            nn.Linear(3136, 1600),
+                                            nn.ReLU(),
+                                            nn.Linear(1600, 256),
+                                            nn.ReLU(),
+                                            nn.Linear(256, 18))
+
+    def forward(self, x_input):
+        '''Calculates output of the network given data x_input'''
+
+        y_output = self.stacked_layers(x_input)
+        return torch.nn.Softmax(y_output)
+
+
+class AtariValueNetwork(nn.Module):
+    '''Value-Net for Atari game environments using A3C'''
+
+    def __init__(self):
+
+        super().__init__()
+        self.stacked_layers = nn.Sequential(nn.Conv2d(4, 32, kernel_size=8, stride=4),
+                                            nn.ReLU(),
+                                            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+                                            nn.ReLU(),
+                                            nn.Conv2d(64, 64, kernel_size=3, stride=1),
+                                            nn.ReLU(),
+                                            nn.Flatten(start_dim=1),
+                                            nn.Linear(3136, 1600),
+                                            nn.ReLU(),
+                                            nn.Linear(1600, 256),
+                                            nn.ReLU(),
+                                            nn.Linear(256, 1))
 
     def forward(self, x_input):
         '''Calculates output of the network given data x_input'''

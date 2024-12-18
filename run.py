@@ -10,16 +10,11 @@ from atari_project import training_atari_dqn as ta
 def main():
     '''Main process of the biased RL setting for arbitrary environments.'''
 
-    # carracing_network = m.RacingNetwork().to(c.DEVICE)
-    # carracing_target_network = m.RacingNetwork().to(c.DEVICE)
-
-    # for param in carracing_target_network.parameters():
-    #     param.requires_grad = False
-
-    tc.train_network()
+    # tc.train_network()
     # tm.train_network(conv_net=False)
-    # tr.train_network(carracing_network, carracing_target_network)
+    # tr.train_network()
     # ta.train_network()
+    ta.train_a3c_network('Centipede')
 
 if __name__ == '__main__':
     main()
