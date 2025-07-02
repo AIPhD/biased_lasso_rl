@@ -34,19 +34,22 @@ def train_dqn_network(render_mode=c.RENDER,
 
     if c.LOAD_NETWORK:
 
-        source_network = m.AtariNetwork().to(c.DEVICE)
+        source_network = m.AtariNetwork(action_space.n).to(c.DEVICE)
         source_network.load_state_dict(torch.load(c.MODEL_DIR))
         source_network.eval()
         transfer_learning = True
 
     else:
-        source_network = m.AtariNetwork().to(c.DEVICE)
+        source_network = m.AtariNetwork(action_space.n).to(c.DEVICE)
         transfer_learning = False
 
     for param in source_network.parameters():
             param.requires_grad = False
 
     for game_name, game in games.items():
+
+        env = gym.make(game, render_mode=render_mode, frameskip=1)
+        action_space = env.action_space
 
         if c.LOAD_SEGMENT:
         
@@ -60,17 +63,17 @@ def train_dqn_network(render_mode=c.RENDER,
             acc_reward_array = torch.load(c.DATA_DIR + game_name + '_rewards.pt')
             loss_array = torch.load(c.DATA_DIR + game_name + '_loss.pt')
             total_loss_array = torch.load(c.DATA_DIR + game_name + '_reg_loss.pt')
-            network_model = m.AtariNetwork().to(c.DEVICE)
+            network_model = m.AtariNetwork(action_space.n).to(c.DEVICE)
             network_model.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
             network_model.eval()
-            target_net = m.AtariNetwork().to(c.DEVICE)
+            target_net = m.AtariNetwork(action_space.n).to(c.DEVICE)
             target_net.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_target_model'))
             target_net.eval()
 
         else:
 
-            network_model = m.AtariNetwork().to(c.DEVICE)
-            target_net = m.AtariNetwork().to(c.DEVICE)
+            network_model = m.AtariNetwork(action_space.n).to(c.DEVICE)
+            target_net = m.AtariNetwork(action_space.n).to(c.DEVICE)
             acc_reward_array = []
             loss_array = []
             total_loss_array = []
@@ -82,7 +85,6 @@ def train_dqn_network(render_mode=c.RENDER,
         for param in target_net.parameters():
             param.requires_grad = False
 
-        env = gym.make(game, render_mode=render_mode, frameskip=1)
         env = gym.wrappers.AtariPreprocessing(env,
                                               noop_max=30,
                                               frame_skip=c.FRAME_SKIP,
@@ -92,7 +94,6 @@ def train_dqn_network(render_mode=c.RENDER,
                                               grayscale_newaxis=False,
                                               scale_obs=False)
         env = gym.wrappers.FrameStack(env, 4)
-        action_space = env.action_space
 
         for episode in range(c.EPISODES):
             obs, _ = env.reset()
@@ -109,9 +110,8 @@ def train_dqn_network(render_mode=c.RENDER,
                 exploration_counter += 1
                 term_bool = 1
                 action = select_action(network_model(state),
-                                       epsilon,
-                                       replay_memory,
-                                       range(action_space.n))
+                                       action_space.n,
+                                       epsilon)
                 next_obs, reward, done, _, _ = env.step(action)
 
                 if done:
@@ -237,8 +237,8 @@ def train_dqn_network(render_mode=c.RENDER,
     return network_model
 
 
-def train_a3c_network(game_name):
-    '''Train policy based on the asynchronous advantage actor-critic framework.'''
+def train_actor_critic(game_name):
+    '''Train policy based on a regular actor-critic framework.'''
 
     if c.LOAD_NETWORK:
 
@@ -262,28 +262,17 @@ def train_a3c_network(game_name):
         network_policy = m.AtariPolicyNetwork().to(c.DEVICE)
         network_policy.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_policy'))
         network_policy.eval()
-        target_policy = m.AtariPolicyNetwork().to(c.DEVICE)
-        target_policy.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_target_policy'))
-        target_policy.eval()
         network_value_function = m.AtariValueNetwork().to(c.DEVICE)
         network_value_function.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_value'))
         network_value_function.eval()
-        target_value_function = m.AtariValueNetwork().to(c.DEVICE)
-        target_value_function.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_target_value'))
-        target_value_function.eval()
 
     else:
 
         network_policy = m.AtariPolicyNetwork().to(c.DEVICE)
-        target_policy = m.AtariPolicyNetwork().to(c.DEVICE)
         network_value_function = m.AtariValueNetwork().to(c.DEVICE)
-        target_value_function = m.AtariValueNetwork().to(c.DEVICE)
         acc_reward_array = []
         loss_array = []
         total_loss_array = []
-
-    for param in target_policy.parameters():
-        param.requires_grad = False
 
     env = gym.make(ATARI_GAMES[game_name], render_mode=c.RENDER, frameskip=1)
     env = gym.wrappers.AtariPreprocessing(env,
@@ -303,13 +292,6 @@ def train_a3c_network(game_name):
         # env.close()
         state = create_conv_state_vector(obs)
         accumulated_reward = 0
-        replay_memory = deque([], maxlen=c.CAPACITY)
-
-        for key in target_policy.state_dict():
-            target_policy.state_dict()[key] = network_policy.state_dict()[key]
-
-        for key in network_value_function.state_dict():
-            target_value_function.state_dict()[key] = network_value_function.state_dict()[key]
 
         for i in range(c.TIME_STEPS):
             env.render()
@@ -317,14 +299,138 @@ def train_a3c_network(game_name):
             # action = env.action_space.sample()
             term_bool = 1
             action = select_action(network_policy(state),
-                                   1,
-                                   replay_memory,
-                                   range(action_space.n))
+                                   1)
 
             next_obs, reward, done, _, _ = env.step(action)
 
             if done:
                 term_bool = 0
+
+            accumulated_reward += reward
+            next_state = create_conv_state_vector(next_obs)
+            loss_value, total_loss = o.actor_critic_optimization(network_policy,
+                                                                 network_value_function,
+                                                                 reward,
+                                                                 action,
+                                                                 state,
+                                                                 next_state,
+                                                                 term_bool,
+                                                                 c.GAMMA,
+                                                                 learning_rate=c.LEARNING_RATE)
+            loss_array.append(loss_value)
+            total_loss_array.append(total_loss)
+            state = next_state
+
+
+            if done:
+                print(f"Episode finished after {i+1} timesteps.")
+                break
+
+        print(f"{episode + 1} episode(s) done.")
+        print(f'Accumulated a total reward of {accumulated_reward}.')
+        acc_reward_array.append(accumulated_reward)
+
+        if (episode + 1) % c.SAVE_PERIOD == 0 and c.SAVE_SEGMENT:
+
+            print('Save Plots and Data')
+            torch.save(network_policy.state_dict(), c.MODEL_DIR + game_name + '_policy')
+            torch.save(network_value_function.state_dict(), c.MODEL_DIR + game_name + '_value')
+            torch.save(acc_reward_array, c.DATA_DIR + game_name + '_rewards_a3c.pt')
+            torch.save(loss_array, c.DATA_DIR + game_name + '_loss_a3c.pt')
+            torch.save(total_loss_array, c.DATA_DIR + game_name + '_reg_loss_a3c.pt')
+
+            e.plot_cumulative_rewards_per_segment(np.asarray(acc_reward_array),
+                                                  len(np.asarray(acc_reward_array)),
+                                                  len(np.asarray(acc_reward_array)),
+                                                  1,
+                                                  plot_suffix=game_name+'_accumulated_reward_a3c',
+                                                  plot_dir=c.PLOT_DIR)
+            e.plot_loss_function(loss_array,
+                                 len(loss_array),
+                                 plot_suffix=game_name+'_loss_evolution_a3c',
+                                 plot_dir=c.PLOT_DIR)
+            # e.plot_loss_function(total_loss_array,
+            #                      len(total_loss_array),
+            #                      y_label='Regularized Loss',
+            #                      plot_suffix=game_name+'_total_loss_evolution_a3c',
+            #                      plot_dir=c.PLOT_DIR)
+
+    env.close()
+
+
+def train_a2c_network(game_name):
+    '''Train policy based on the advantage a2c framework.'''
+
+    if c.LOAD_NETWORK:
+
+        source_network = m.AtariValueNetwork().to(c.DEVICE)
+        source_network.load_state_dict(torch.load(c.MODEL_DIR))
+        source_network.eval()
+        transfer_learning = True
+
+    else:
+        source_network = m.AtariValueNetwork().to(c.DEVICE)
+        transfer_learning = False
+
+    for param in source_network.parameters():
+            param.requires_grad = False
+
+    env = gym.make(ATARI_GAMES[game_name], render_mode=c.RENDER, frameskip=1)
+    action_space = env.action_space
+
+    if c.LOAD_SEGMENT:
+
+        acc_reward_array = torch.load(c.DATA_DIR + game_name + '_rewards_a3c.pt')
+        loss_array = torch.load(c.DATA_DIR + game_name + '_loss_a3c.pt')
+        total_loss_array = torch.load(c.DATA_DIR + game_name + '_reg_loss_a3c.pt')
+        network_policy = m.AtariPolicyNetwork(action_space.n).to(c.DEVICE)
+        network_policy.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_policy'))
+        network_policy.eval()
+        network_value_function = m.AtariValueNetwork().to(c.DEVICE)
+        network_value_function.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_value'))
+        network_value_function.eval()
+
+    else:
+
+        network_policy = m.AtariPolicyNetwork(action_space.n).to(c.DEVICE)
+        network_value_function = m.AtariValueNetwork().to(c.DEVICE)
+        acc_reward_array = []
+        loss_array = []
+        total_loss_array = []
+
+    env = gym.wrappers.AtariPreprocessing(env,
+                                          noop_max=30,
+                                          frame_skip=c.FRAME_SKIP,
+                                          screen_size=84,
+                                          terminal_on_life_loss=False,
+                                          grayscale_obs=True,
+                                          grayscale_newaxis=False,
+                                          scale_obs=False)
+    env = gym.wrappers.FrameStack(env, 4)
+
+    for episode in range(c.EPISODES):
+
+        obs, _ = env.reset()
+        # env.close()
+        state = create_conv_state_vector(obs)
+        accumulated_reward = 0
+        replay_memory = deque([], maxlen=c.CAPACITY)
+
+        for i in range(c.TIME_STEPS):
+            env.render()
+            # time.sleep(0.1)
+            # action = env.action_space.sample()
+            term_bool = 1
+            action = select_action(network_policy(state),
+                                   action_space.n,
+                                   1)
+
+            next_obs, reward, done, _, _ = env.step(action)
+
+            if done:
+                term_bool = 0
+
+            big_r = term_bool*network_value_function(state)
 
             accumulated_reward += reward
             next_state = create_conv_state_vector(next_obs)
@@ -335,46 +441,46 @@ def train_a3c_network(game_name):
                                               term_bool))
             state = next_state
 
-
             if done:
                 print(f"Episode finished after {i+1} timesteps.")
                 break
 
-        big_r = term_bool * target_value_function(state)
-        loss_value, total_loss = o.a3c_optimization(target_policy, target_value_function, replay_memory, big_r.detach(), c.GAMMA)
+        loss_value, total_loss = o.a2c_optimization(network_policy,
+                                                    network_value_function,
+                                                    replay_memory,
+                                                    big_r,
+                                                    c.GAMMA,
+                                                    learning_rate=c.LEARNING_RATE)
         loss_array.append(loss_value)
         total_loss_array.append(total_loss)
-
         print(f"{episode + 1} episode(s) done.")
         print(f'Accumulated a total reward of {accumulated_reward}.')
         acc_reward_array.append(accumulated_reward)
 
-    if (episode + 1) % c.SAVE_PERIOD == 0 and c.SAVE_SEGMENT:
+        if (episode + 1) % c.SAVE_PERIOD == 0 and c.SAVE_SEGMENT:
 
-        print('Save Plots and Data')
-        torch.save(network_policy.state_dict(), c.MODEL_DIR + game_name + '_policy')
-        torch.save(target_policy.state_dict(), c.MODEL_DIR + game_name + '_target_policy')
-        torch.save(network_value_function.state_dict(), c.MODEL_DIR + game_name + '_value')
-        torch.save(target_value_function.state_dict(), c.MODEL_DIR + game_name + '_target_value')
-        torch.save(acc_reward_array, c.DATA_DIR + game_name + '_rewards_a3c.pt')
-        torch.save(loss_array, c.DATA_DIR + game_name + '_loss_a3c.pt')
-        torch.save(total_loss_array, c.DATA_DIR + game_name + '_reg_loss_a3c.pt')
+            print('Save Plots and Data')
+            torch.save(network_policy.state_dict(), c.MODEL_DIR + game_name + '_policy')
+            torch.save(network_value_function.state_dict(), c.MODEL_DIR + game_name + '_value')
+            torch.save(acc_reward_array, c.DATA_DIR + game_name + '_rewards_a3c.pt')
+            torch.save(loss_array, c.DATA_DIR + game_name + '_loss_a3c.pt')
+            torch.save(total_loss_array, c.DATA_DIR + game_name + '_reg_loss_a3c.pt')
 
-        e.plot_cumulative_rewards_per_segment(np.asarray(acc_reward_array),
-                                              len(np.asarray(acc_reward_array))*len(ATARI_GAMES),
-                                              len(np.asarray(acc_reward_array)),
-                                              len(ATARI_GAMES),
-                                              plot_suffix=game_name+'_accumulated_reward_a3c',
-                                              plot_dir=c.PLOT_DIR)
-        e.plot_loss_function(loss_array,
-                             len(loss_array),
-                             plot_suffix=game_name+'_loss_evolution_a3c',
-                             plot_dir=c.PLOT_DIR)
-        e.plot_loss_function(total_loss_array,
-                             len(total_loss_array),
-                             y_label='Regularized Loss',
-                             plot_suffix=game_name+'_total_loss_evolution_a3c',
-                             plot_dir=c.PLOT_DIR)
+            e.plot_cumulative_rewards_per_segment(np.asarray(acc_reward_array),
+                                                  len(np.asarray(acc_reward_array)),
+                                                  len(np.asarray(acc_reward_array)),
+                                                  1,
+                                                  plot_suffix=game_name+'_accumulated_reward_a3c',
+                                                  plot_dir=c.PLOT_DIR)
+            e.plot_loss_function(loss_array,
+                                 len(loss_array),
+                                 plot_suffix=game_name+'_loss_evolution_a3c',
+                                 plot_dir=c.PLOT_DIR)
+            # e.plot_loss_function(total_loss_array,
+            #                      len(total_loss_array),
+            #                      y_label='Regularized Loss',
+            #                      plot_suffix=game_name+'_total_loss_evolution_a3c',
+            #                      plot_dir=c.PLOT_DIR)
 
     env.close()
 
@@ -387,16 +493,12 @@ def create_conv_state_vector(observation):
     return state_vector
 
 
-def select_action(network_output, epsilon, state_history, action_space, stochastic=True):
+def select_action(network_output, number_actions, epsilon, stochastic=True):
     '''Calculate, which action to take, with best estimated chance.'''
 
     threshold = np.random.sample()
 
     if threshold < epsilon:
-
-        action = np.random.randint(18)
-
-    else:
         if torch.max(network_output).isnan():
 
             sys.exit("Nan Value detected, Network diverged.")
@@ -404,10 +506,13 @@ def select_action(network_output, epsilon, state_history, action_space, stochast
         if stochastic:
 
             prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
-            action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
+            action = np.random.choice(np.arange(number_actions), p=prob_action.cpu().detach().numpy())
 
         else:
 
             action = np.argmax(torch.flatten(network_output).cpu().detach().numpy())
+
+    else:
+        action = np.random.randint(number_actions)
 
     return action

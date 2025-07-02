@@ -5,7 +5,7 @@ import config as c
 DEVICE = c.DEVICE
 CART_INPUT = 4
 CART_OUTPUT = 2
-EPISODES = 600
+EPISODES = 2000
 TAU = 1
 TIME_STEPS = 500
 HIDDEN_NODE_COUNT = 64
@@ -27,6 +27,8 @@ EPS_MIN = 0.1
 NO_SEGMENTS = 1
 DATA_DIR = 'cartpole_project/collected_data/'
 PLOT_DIR = 'cartpole_project/plots/'
+MODEL_DIR = 'cartpole_project/collected_data/'
+SAVE_PERIOD = 25
 
  # use command DISPLAY=$(grep nameserver /etc/resolv.conf | awk '{print $2}'):0.0
  # when looking for virtual display output in WSL2 or copy in bashrc file

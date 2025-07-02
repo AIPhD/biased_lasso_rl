@@ -9,7 +9,7 @@ import optimization as o
 import models as m
 import evaluation as e
 
-def train_network(render_mode=c.RENDER):
+def train_dqn_network(render_mode=c.RENDER):
     '''Function to train a model given the collected batch data set.'''
 
     network_model = m.FullConnectedNetwork().to(c.DEVICE)
@@ -109,6 +109,88 @@ def train_network(render_mode=c.RENDER):
     return network_model
 
 
+def train_a2c_network(game_name='CartPole'):
+    '''Train policy based on the advantage a2c framework.'''
+
+    network_policy = m.FullConnectedNetwork().to(c.DEVICE)
+    network_value_function = m.CartpoleValueNetwork().to(c.DEVICE)
+    acc_reward_array = []
+    loss_array = []
+    total_loss_array = []
+    env = gym.make('CartPole-v1', render_mode=c.RENDER)
+    action_space = env.action_space
+
+    for episode in range(c.EPISODES):
+
+        obs, _ = env.reset()
+        # env.close()
+        state = create_fc_state_vector(obs)
+        accumulated_reward = 0
+        replay_memory = deque([], maxlen=c.CAPACITY)
+
+        for i in range(c.TIME_STEPS):
+            env.render()
+            # time.sleep(0.1)
+            # action = env.action_space.sample()
+            term_bool = 1
+            action = select_action(network_policy(state),
+                                   action_space.n,
+                                   1)
+
+            next_obs, reward, done, _, _ = env.step(action)
+
+            if done:
+                term_bool = 0
+
+            big_r = term_bool*network_value_function(state)
+
+            accumulated_reward += reward
+            next_state = create_fc_state_vector(next_obs)
+            replay_memory.append(o.Transition(state,
+                                              action,
+                                              next_state,
+                                              reward,
+                                              term_bool))
+            state = next_state
+
+            if done:
+                print(f"Episode finished after {i+1} timesteps.")
+                break
+
+        loss_value, total_loss = o.a2c_optimization(network_policy,
+                                                    network_value_function,
+                                                    replay_memory,
+                                                    big_r,
+                                                    c.GAMMA,
+                                                    learning_rate=c.LEARNING_RATE)
+        loss_array.append(loss_value)
+        total_loss_array.append(total_loss)
+        print(f"{episode + 1} episode(s) done.")
+        print(f'Accumulated a total reward of {accumulated_reward}.')
+        acc_reward_array.append(accumulated_reward)
+
+        if (episode + 1) % c.SAVE_PERIOD == 0:
+
+            print('Save Plots')
+            e.plot_cumulative_rewards_per_segment(np.asarray(acc_reward_array),
+                                                  len(np.asarray(acc_reward_array)),
+                                                  len(np.asarray(acc_reward_array)),
+                                                  1,
+                                                  plot_suffix=game_name+'_accumulated_reward_a2c',
+                                                  plot_dir=c.PLOT_DIR)
+            e.plot_loss_function(loss_array,
+                                 len(loss_array),
+                                 plot_suffix=game_name+'_loss_evolution_a2c',
+                                 plot_dir=c.PLOT_DIR)
+            # e.plot_loss_function(total_loss_array,
+            #                      len(total_loss_array),
+            #                      y_label='Regularized Loss',
+            #                      plot_suffix=game_name+'_total_loss_evolution_a3c',
+            #                      plot_dir=c.PLOT_DIR)
+
+    env.close()
+
+
 def create_fc_state_vector(observation):
     '''Convert Observation output from environmnet into a state variable for regular NN.'''
 
@@ -116,25 +198,26 @@ def create_fc_state_vector(observation):
     return normalize_state(state_vector)
 
 
-def select_action(network_output, epsilon, stochastic_selection=False):
+def select_action(network_output, numb_actions, epsilon, stochastic_selection=True):
     '''Calculate, which action to take, with best estimated chance.'''
 
     threshold = np.random.sample()
 
     if threshold < epsilon:
-        action = np.random.randint(c.CART_OUTPUT)
-
-    else:
         if torch.max(network_output).isnan():
             print('Nan Value detected')
 
         if stochastic_selection:
             prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
-            action = np.random.choice(np.arange(2), p=prob_action.cpu().detach().numpy())
+            action = np.random.choice(np.arange(numb_actions),
+                                      p=prob_action.cpu().detach().numpy())
 
         else:
             action = int(torch.argmax(network_output))
             # print(action)
+
+    else:
+        action = np.random.randint(numb_actions)
 
     return action
 
