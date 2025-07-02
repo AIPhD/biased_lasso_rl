@@ -32,6 +32,51 @@ def plot_cumulative_rewards_per_segment(total_reward,
 
     plt.close()
 
+
+def plot_moving_average_reward(total_reward,
+                               seg_len,
+                               no_segment,
+                               mean_length=25,
+                               x_label="episodes",
+                               y_label="Accumulated mean reward per episode",
+                               plot_suffix='accumulated_mean_reward',
+                               plot_dir=None,
+                               transfer_learning=False):
+    '''Plot the moving average of total rewards per episode as a function of episodes.'''
+
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    transfer_label = ''
+
+    if transfer_learning:
+        transfer_label = '_transfer'
+
+    for i in range (no_segment - 1):
+        plt.axvline((i + 1)*seg_len - mean_length, linestyle="--", color="r")
+
+    running_average_reward = moving_average(total_reward, mean_length)
+
+    plt.plot(np.arange(len(running_average_reward)) + mean_length,
+             running_average_reward)
+    # plt.show()
+
+    if plot_dir is not None:
+        plt.savefig(f'{plot_dir}/{plot_suffix+transfer_label}.pdf',
+                    dpi=800,
+                    format= "pdf",
+                    bbox_inches='tight',
+                    pad_inches=0)
+
+    plt.close()
+
+
+def moving_average(inp_array, length):
+    '''Calculate moving average given an array and length over which to calculate the mean.'''
+
+    cumsum = np.cumsum(np.insert(inp_array, 0, 0))
+    return (cumsum[length:]-cumsum[:-length])/length
+
+
 def plot_time_steps_in_maze(total_time_steps,
                             episode,
                             seg_len,

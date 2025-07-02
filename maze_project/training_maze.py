@@ -19,15 +19,18 @@ import evaluation as e
 from maze_project import config_maze as c
 
 
-GAME_TASKS = {# 'pathfinding': [1, 0, 0, 0],
-              # 'coincollecting': [1, 1, 0, 0],
+GAME_TASKS = {'pathfinding': [1, 0, 0, 0],
+              'coincollecting': [1, 1, 0, 0],
               'onlycoincollecting': [0, 1, 0, 0],
-              # 'trapavoiding': [1, 0, 1, 0],
-              # 'mazenavigating': [1, 0, 0, 1],
-              # 'coinsandtraps': [1, 1, 1, 0],
-              # 'coinsinmaze': [1, 1, 0, 1],
-              # 'trapsinmaze': [1, 0, 1, 1],
-              # 'completetask': [1, 1, 1, 1]
+              'trapavoiding': [1, 0, 1, 0],
+              'onlytraps': [0, 0, 1, 0],
+              'mazenavigating': [1, 0, 0, 1],
+              'coinsandtraps': [1, 1, 1, 0],
+              'onlycoinsandtraps': [0, 1, 1, 0],
+              'coinsinmaze': [1, 1, 0, 1],
+              'onlycoinsinmaze': [0, 1, 0, 1],
+              'trapsinmaze': [1, 0, 1, 1],
+              'completetask': [1, 1, 1, 1]
               }
 
 
@@ -136,7 +139,7 @@ def train_network(no_segments=c.NO_SEGMENTS,
                                        mc_explore,
                                        replay_memory,
                                        range(action_space.n))
-                next_obs, reward, done,_, _ = env.step(action)
+                next_obs, reward, done, _, _ = env.step(action)
                 no_time_steps += 1
 
                 if done:
@@ -244,13 +247,112 @@ def train_network(no_segments=c.NO_SEGMENTS,
     return network_model
 
 
-# def offline_initialization(network_model,
-#                            target_model,
-#                            replay_memory,
-#                            n_epochs=100,
-#                            batch_size=50):
-#     '''Use saved replay memory data to do offline training in an initialization phase.'''
-#     pass
+def train_a2c_network(game_name='onlycoincollecting', source_name=None):
+    '''Train policy based on the advantage a2c framework.'''
+
+    if source_name is not None:
+        source_network = m.MazePolicyNetwork().to(c.DEVICE)
+        source_network.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy'))
+        source_network.eval()
+        network_policy = m.MazePolicyNetwork().to(c.DEVICE)
+        network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy'))
+        network_policy.eval()
+        network_value_function = m.MazeValueNetwork().to(c.DEVICE)
+        # network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy'))
+        # network_policy.eval()
+        
+        transfer_learning = True
+
+    else:
+        source_network = m.MazePolicyNetwork().to(c.DEVICE)
+        source_network.init_weights_to_zero()
+        network_value_function = m.MazeValueNetwork().to(c.DEVICE)
+        network_policy = m.MazePolicyNetwork().to(c.DEVICE)
+        transfer_learning = False
+
+    acc_reward_array = []
+    loss_array = []
+    total_loss_array = []
+    game = GAME_TASKS[game_name]
+
+    for episode in range(c.EPISODES):
+
+        env = gym.make('gym_examples/GridWorld-v0', game=game, render_mode=c.RENDER)
+        action_space = env.action_space
+        obs = env.reset()
+        # env.close()
+        state = create_fc_state_vector(obs)
+        accumulated_reward = 0
+        replay_memory = deque([], maxlen=c.CAPACITY)
+
+        for i in range(c.TIME_STEPS):
+
+            env.render()
+            # time.sleep(0.1)
+            # action = env.action_space.sample()
+            term_bool = 1
+            action = select_action(network_policy(state),
+                                   0,
+                                   False,
+                                   replay_memory,
+                                   action_space)
+            next_obs, reward, done, _, _ = env.step(action)
+
+            if done:
+                term_bool = 0
+
+            big_r = term_bool*network_value_function(state)[0]
+            accumulated_reward += reward
+            next_state = create_fc_state_vector(next_obs)
+            replay_memory.append(o.Transition(state,
+                                              action,
+                                              next_state,
+                                              reward,
+                                              term_bool))
+            state = next_state
+
+            if done:
+                print(f"Episode finished after {i+1} timesteps.")
+                break
+
+        loss_value, total_loss = o.a2c_optimization(network_policy,
+                                                    network_value_function,
+                                                    source_network,
+                                                    replay_memory,
+                                                    big_r,
+                                                    c.GAMMA,
+                                                    learning_rate=c.LEARNING_RATE,
+                                                    lamb_lasso=c.LAMB_LASSO/np.sqrt(len(replay_memory)),
+                                                    lamb_ridge=c.LAMB_RIDGE/np.sqrt(len(replay_memory)),
+                                                    transfer_learning=transfer_learning)
+        loss_array.append(loss_value)
+        total_loss_array.append(total_loss)
+        print(f"{episode + 1} episode(s) done.")
+        print(f'Accumulated a total reward of {accumulated_reward}.')
+        acc_reward_array.append(accumulated_reward)
+
+        if (episode + 1) % c.SAVE_PERIOD == 0:
+
+            print('Save Plots and Model')
+            e.plot_moving_average_reward(np.asarray(acc_reward_array),
+                                        len(np.asarray(acc_reward_array)),
+                                        1,
+                                        plot_suffix=game_name+f'_source_{source_name}_accumulated_rmr_a2c_residual_lamb_{c.LAMB_LASSO}',
+                                        plot_dir=c.PLOT_DIR,
+                                        transfer_learning=transfer_learning)
+            e.plot_loss_function(loss_array,
+                                 len(loss_array),
+                                 plot_suffix=game_name+'_loss_evolution_a2c',
+                                 plot_dir=c.PLOT_DIR)
+            torch.save(network_value_function.state_dict(), c.MODEL_DIR + game_name + '_value')
+            torch.save(network_policy.state_dict(), c.MODEL_DIR + game_name + '_policy')
+            # e.plot_loss_function(total_loss_array,
+            #                      len(total_loss_array),
+            #                      y_label='Regularized Loss',
+            #                      plot_suffix=game_name+'_total_loss_evolution_a3c',
+            #                      plot_dir=c.PLOT_DIR)
+
+    env.close()
 
 
 def create_fc_state_vector(observation):
@@ -290,7 +392,7 @@ def create_conv_state_vector(observation):
     return state_vector
 
 
-def select_action(network_output, epsilon, mc_explore, state_history, action_space):
+def select_action(network_output, epsilon, mc_explore, state_history, action_space, stochastic=True):
     '''Calculate, which action to take, with best estimated chance.'''
 
     threshold = np.random.sample()
@@ -299,6 +401,7 @@ def select_action(network_output, epsilon, mc_explore, state_history, action_spa
 
         if mc_explore:
             action = monte_carlo_exploration(state_history, action_space)
+
         else:
             action = np.random.randint(c.GRID_OUTPUT)
 
@@ -307,9 +410,15 @@ def select_action(network_output, epsilon, mc_explore, state_history, action_spa
             print('Nan Value detected')
 
         # action = int(torch.argmax(network_output))
-        prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
-        # action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
-        action = np.argmax(torch.flatten(network_output).cpu().detach().numpy())
+        if stochastic:
+            prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
+            action = np.random.choice(np.arange(action_space.n),
+                                      p=prob_action.cpu().detach().numpy())
+
+        else:
+            # action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
+            action = np.argmax(torch.flatten(network_output).cpu().detach().numpy())
+
     return action
 
 

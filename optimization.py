@@ -4,6 +4,7 @@ import random
 import torch
 from torch import  optim
 from torch import nn
+from torch.nn import functional as F
 import config as c
 
 
@@ -32,17 +33,6 @@ def optimization_step(network_model,
     #                       lr=learning_rate,
     #                       momentum=momentum)
     optimizer.zero_grad()
-    # set_size = len(memory_sample)
-
-    # if set_size < batch_size:
-    #     return
-
-    # random.shuffle(memory_sample)
-    # set_size = batch_size
-    # batch_size = round(set_size)
-    # mem_batches = [deque(islice(memory_sample,
-    #                             batch_size*i,
-    #                             batch_size*(i + 1))) for i in range(1)]
     mem_batch = random.sample(memory, batch_size)
     batch = Transition(*zip(*mem_batch))
     state_batch = torch.stack(batch.state).to(c.DEVICE)
@@ -71,11 +61,9 @@ def optimization_step(network_model,
     for name, param in network_param_difference(network_model, source_network, transfer_learning):
 
         if l1_reg is None and 'weight' in name:
-            # l2_reg = param.norm(2)**2
             l1_reg = param.norm(1)
 
         elif 'weight' in name:
-            # l2_reg = l2_reg + param.norm(2)**2
             l1_reg = l1_reg + param.norm(1)
 
     for name, ridge_param in network_model.named_parameters():
@@ -98,15 +86,15 @@ def optimization_step(network_model,
         # print("optimization step concluded")
 
 
-def a3c_optimization(network_policy, network_value_function, acc_batch, big_r, gamma, learning_rate=1, momentum=0, transfer_learning=False):
-    '''Optimization step for A3C algorithm.'''
+def a2c_optimization(network_policy, network_value_function, source_value_function, acc_batch, big_r, gamma, learning_rate=1, lamb_lasso=0, lamb_ridge=0, momentum=0, transfer_learning=False):
+    '''Optimization step for A2C algorithm.'''
 
     criterion = nn.MSELoss()
     policy_optimizer = optim.Adam(network_policy.parameters(),
-                                  lr=1,
+                                  lr=learning_rate,
                                   amsgrad=True)
     value_optimizer = optim.Adam(network_value_function.parameters(),
-                                 lr=1,
+                                 lr=learning_rate,
                                  amsgrad=True)
     policy_optimizer.zero_grad()
     value_optimizer.zero_grad()
@@ -114,18 +102,82 @@ def a3c_optimization(network_policy, network_value_function, acc_batch, big_r, g
     state_batch = torch.stack(batch.state).to(c.DEVICE)
     action_batch = torch.tensor(batch.action).to(c.DEVICE)[:, None]
     reward_batch = torch.tensor(batch.reward).to(c.DEVICE)
+    term_batch = torch.tensor(batch.terminated).to(c.DEVICE)
+    q_values = torch.zeros(len(acc_batch))
+    l2_reg = None
+    l1_reg = None
 
     for i in range(len(reward_batch)):
-        big_r = gamma*big_r + reward_batch[-i-1]
-        policy_loss = torch.log(network_policy(state_batch[-i-1])[action_batch[-i-1]])*(big_r - network_value_function(state_batch[-i-1]).values)
-        value_loss = criterion(big_r, network_value_function(state_batch[-i-1]))
-        policy_loss.backward()
-        value_loss.backward()
+        big_r = gamma*big_r*term_batch[-i-1] + reward_batch[-i-1]
+        q_values[-i-1] = big_r
+        # policy_loss = torch.nn.functional.log_softmax(network_policy(state_batch[-i-1][None,:, :, :]),
+        #                                               dim=1)[0, action_batch[-i-1][0]]*(big_r.detach() -
+        #                                                                                 network_value_function(state_batch[-i-1][None, :, :, :]).detach())[0][0]
+        # value_loss = criterion(big_r.detach()[0][0], network_value_function(state_batch[-i-1][None, :, :, :])[0][0])
+        # policy_loss.backward()
+        # value_loss.backward()  
 
-    policy_optimizer.step()
+    for name, param in network_param_difference(network_policy, source_value_function, transfer_learning):
+
+        if l1_reg is None and 'layer_res.weight' in name:  #layer_res.weight
+            l1_reg = param.norm(1)
+
+        elif 'layer_res.weight' in name:
+            l1_reg = l1_reg + param.norm(1)
+
+    for name, ridge_param in network_value_function.named_parameters():
+
+        if l2_reg is None and 'weight' in name:
+            l2_reg = ridge_param.norm(2)**2
+
+        elif 'weight' in name:
+            l2_reg = l2_reg + ridge_param.norm(2)**2
+
+
+    value_loss = (q_values.detach() - network_value_function(state_batch)[:, 0]).pow(2).mean() # + lamb_lasso*l1_reg + lamb_ridge*l2_reg
+    value_loss.backward()
     value_optimizer.step()
+    policy_loss = (-torch.nn.functional.log_softmax(network_policy(state_batch),
+                                                    dim=1)[torch.arange(len(acc_batch)),
+                                                           action_batch[:, 0]]*(q_values.detach() -
+                                                                                network_value_function(state_batch)[:, 0].detach())).mean()+ lamb_lasso*l1_reg
+    policy_loss.backward()
+    policy_optimizer.step()
 
-    return value_loss, policy_loss
+    return value_loss.detach().numpy(), policy_loss.detach().numpy()
+
+
+def actor_critic_optimization(network_policy,
+                     network_value_function,
+                     reward,
+                     action,
+                     state,
+                     next_state,
+                     term,
+                     gamma,
+                     learning_rate=1e-3,
+                     momentum=0,
+                     transfer_learning=False):
+    '''Optimization step for Actor_critic algorithm.'''
+
+    criterion = nn.MSELoss()
+    policy_optimizer = optim.Adam(network_policy.parameters(),
+                                  lr=learning_rate,
+                                  amsgrad=True)
+    value_optimizer = optim.Adam(network_value_function.parameters(),
+                                 lr=learning_rate,
+                                 amsgrad=True)
+    policy_optimizer.zero_grad()
+    value_optimizer.zero_grad()
+    value_loss = criterion(reward + term*gamma*network_value_function(next_state), network_value_function(state))
+    value_loss.backward()
+    value_optimizer.step()
+    advantage_term = reward + term*gamma*network_value_function(next_state) - network_value_function(state)
+    policy_loss = torch.nn.functional.log_softmax(network_policy(state), dim=1)[0, action]*advantage_term.detach()
+    policy_loss.backward()
+    policy_optimizer.step()
+
+    return value_loss.detach().numpy(), policy_loss.detach().numpy()
 
 
 def network_param_difference(target_net, source_net, transfer_learning):
@@ -142,3 +194,58 @@ def network_param_difference(target_net, source_net, transfer_learning):
             regularization_vector = param_target[1]
 
         yield param_target[0], regularization_vector
+
+
+def prox(v, u, *, lambda_, lambda_bar, M):
+    """
+    v has shape (m,) or (m, batches)
+    u has shape (k,) or (k, batches)
+
+    supports GPU tensors
+    """
+    onedim = len(v.shape) == 1
+    if onedim:
+        v = v.unsqueeze(-1)
+        u = u.unsqueeze(-1)
+
+    u_abs_sorted = torch.sort(u.abs(), dim=0, descending=True).values
+
+    k, batch = u.shape
+
+    s = torch.arange(k + 1.0).view(-1, 1).to(v)
+    zeros = torch.zeros(1, batch).to(u)
+
+    a_s = lambda_ - M * torch.cat(
+        [zeros, torch.cumsum(u_abs_sorted - lambda_bar, dim=0)]
+    )
+
+    norm_v = torch.norm(v, p=2, dim=0)
+
+    x = F.relu(1 - a_s / norm_v) / (1 + s * M**2)
+
+    w = M * x * norm_v
+    intervals = soft_threshold(lambda_bar, u_abs_sorted)
+    lower = torch.cat([intervals, zeros])
+
+    idx = torch.sum(lower > w, dim=0).unsqueeze(0)
+
+    x_star = torch.gather(x, 0, idx).view(1, batch)
+    w_star = torch.gather(w, 0, idx).view(1, batch)
+
+    beta_star = x_star * v
+    theta_star = sign_binary(u) * torch.min(soft_threshold(lambda_bar, u.abs()), w_star)
+
+    if onedim:
+        beta_star.squeeze_(-1)
+        theta_star.squeeze_(-1)
+
+    return beta_star, theta_star
+
+
+def soft_threshold(l, x):
+    return torch.sign(x) * torch.relu(torch.abs(x) - l)
+
+
+def sign_binary(x):
+    ones = torch.ones_like(x)
+    return torch.where(x >= 0, ones, -ones)
