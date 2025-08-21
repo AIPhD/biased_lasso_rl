@@ -11,7 +11,7 @@ import config as c
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'terminated'))
 
 
-def optimization_step(network_model,
+def dqn_optimization_step(network_model,
                       target_net,
                       memory,
                       gamma,
@@ -86,7 +86,17 @@ def optimization_step(network_model,
         # print("optimization step concluded")
 
 
-def a2c_optimization(network_policy, network_value_function, source_value_function, acc_batch, big_r, gamma, learning_rate=1, lamb_lasso=0, lamb_ridge=0, momentum=0, transfer_learning=False):
+def a2c_optimization(network_policy,
+                     network_value_function,
+                     source_value_function,
+                     acc_batch,
+                     q_values,
+                     learning_rate=1,
+                     lamb_lasso=0,
+                     lamb_ridge=0,
+                     momentum=0,
+                     transfer_learning=False,
+                     transfer='lasso'):
     '''Optimization step for A2C algorithm.'''
 
     criterion = nn.MSELoss()
@@ -103,13 +113,12 @@ def a2c_optimization(network_policy, network_value_function, source_value_functi
     action_batch = torch.tensor(batch.action).to(c.DEVICE)[:, None]
     reward_batch = torch.tensor(batch.reward).to(c.DEVICE)
     term_batch = torch.tensor(batch.terminated).to(c.DEVICE)
-    q_values = torch.zeros(len(acc_batch))
     l2_reg = None
     l1_reg = None
 
-    for i in range(len(reward_batch)):
-        big_r = gamma*big_r*term_batch[-i-1] + reward_batch[-i-1]
-        q_values[-i-1] = big_r
+    # for i in range(len(reward_batch)):
+    #     big_r = gamma*big_r*term_batch[-i-1] + reward_batch[-i-1]
+    #     q_values[-i-1] = big_r
         # policy_loss = torch.nn.functional.log_softmax(network_policy(state_batch[-i-1][None,:, :, :]),
         #                                               dim=1)[0, action_batch[-i-1][0]]*(big_r.detach() -
         #                                                                                 network_value_function(state_batch[-i-1][None, :, :, :]).detach())[0][0]
@@ -117,21 +126,51 @@ def a2c_optimization(network_policy, network_value_function, source_value_functi
         # policy_loss.backward()
         # value_loss.backward()  
 
-    for name, param in network_param_difference(network_policy, source_value_function, transfer_learning):
+    if transfer == 'lasso':
 
-        if l1_reg is None and 'layer_res.weight' in name:  #layer_res.weight
-            l1_reg = param.norm(1)
+        for name, param in network_param_difference(network_policy, source_value_function, transfer_learning):
 
-        elif 'layer_res.weight' in name:
-            l1_reg = l1_reg + param.norm(1)
+            if l1_reg is None and 'layer_res.weight' in name:  #layer_res.weight
+                l1_reg = param.norm(1)
 
-    for name, ridge_param in network_value_function.named_parameters():
+            elif 'layer_res.weight' in name:
+                l1_reg = l1_reg + param.norm(1)
 
-        if l2_reg is None and 'weight' in name:
-            l2_reg = ridge_param.norm(2)**2
+            if l1_reg is None and 'firstlayer.weight' in name:
+                l1_reg = param.norm(1)
 
-        elif 'weight' in name:
-            l2_reg = l2_reg + ridge_param.norm(2)**2
+            elif 'firstlayer.weight' in name:
+                l1_reg = l1_reg + param.norm(1)
+            
+        
+        reg_param = l1_reg
+
+    if transfer == 'group_lasso':
+
+        group_lasso_reg = None
+
+        for name, param in network_param_difference(network_policy, source_value_function, transfer_learning):
+
+            # if 'layer.weight' in name:
+            if group_lasso_reg is None:
+                group_lasso_reg = param.norm(2)
+
+            else:
+                group_lasso_reg = group_lasso_reg + param.norm(2)
+        
+        reg_param = group_lasso_reg
+            
+    
+    else:
+        reg_param = 0
+
+        # for name, ridge_param in network_value_function.named_parameters():
+
+        #     if l2_reg is None and 'weight' in name:
+        #         l2_reg = ridge_param.norm(2)**2
+
+        #     elif 'weight' in name:
+        #         l2_reg = l2_reg + ridge_param.norm(2)**2
 
 
     value_loss = (q_values.detach() - network_value_function(state_batch)[:, 0]).pow(2).mean() # + lamb_lasso*l1_reg + lamb_ridge*l2_reg
@@ -140,45 +179,11 @@ def a2c_optimization(network_policy, network_value_function, source_value_functi
     policy_loss = (-torch.nn.functional.log_softmax(network_policy(state_batch),
                                                     dim=1)[torch.arange(len(acc_batch)),
                                                            action_batch[:, 0]]*(q_values.detach() -
-                                                                                network_value_function(state_batch)[:, 0].detach())).mean()+ lamb_lasso*l1_reg
+                                                                                network_value_function(state_batch)[:, 0].detach())).mean()+ lamb_lasso*reg_param
     policy_loss.backward()
     policy_optimizer.step()
 
-    return value_loss.detach().numpy(), policy_loss.detach().numpy()
-
-
-def actor_critic_optimization(network_policy,
-                     network_value_function,
-                     reward,
-                     action,
-                     state,
-                     next_state,
-                     term,
-                     gamma,
-                     learning_rate=1e-3,
-                     momentum=0,
-                     transfer_learning=False):
-    '''Optimization step for Actor_critic algorithm.'''
-
-    criterion = nn.MSELoss()
-    policy_optimizer = optim.Adam(network_policy.parameters(),
-                                  lr=learning_rate,
-                                  amsgrad=True)
-    value_optimizer = optim.Adam(network_value_function.parameters(),
-                                 lr=learning_rate,
-                                 amsgrad=True)
-    policy_optimizer.zero_grad()
-    value_optimizer.zero_grad()
-    value_loss = criterion(reward + term*gamma*network_value_function(next_state), network_value_function(state))
-    value_loss.backward()
-    value_optimizer.step()
-    advantage_term = reward + term*gamma*network_value_function(next_state) - network_value_function(state)
-    policy_loss = torch.nn.functional.log_softmax(network_policy(state), dim=1)[0, action]*advantage_term.detach()
-    policy_loss.backward()
-    policy_optimizer.step()
-
-    return value_loss.detach().numpy(), policy_loss.detach().numpy()
-
+    return value_loss.detach().cpu().numpy(), policy_loss.detach().cpu().numpy()
 
 def network_param_difference(target_net, source_net, transfer_learning):
     '''Calculates difference between two networks' parameters for biased regularization'''
@@ -194,6 +199,22 @@ def network_param_difference(target_net, source_net, transfer_learning):
             regularization_vector = param_target[1]
 
         yield param_target[0], regularization_vector
+
+
+def calculate_q_value_batch(term_batch, network_value_function, reward_batch, last_state, time_steps, n_envs, gamma=0.9):
+    '''Calculate the q value for the batch of states and rewards.'''
+
+    q_values = torch.zeros(time_steps, n_envs).to(c.DEVICE)
+
+    for i in range(n_envs):
+        big_r = term_batch[-1][i]*network_value_function(last_state)[:, 0][i]
+        for j in range(len(term_batch)):
+            if term_batch[-j-1][i] == 0:
+                big_r = 0
+            big_r = gamma*big_r + reward_batch[-j-1][i]
+            q_values[-j-1][i] = big_r
+
+    return torch.flatten(q_values)
 
 
 def prox(v, u, *, lambda_, lambda_bar, M):

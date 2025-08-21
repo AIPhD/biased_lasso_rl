@@ -3,11 +3,11 @@ import torch
 
 
 DEVICE = (
-    "cpu"
+    "cuda"
     if torch.cuda.is_available()
-    else "mps"
-    if torch.backends.mps.is_available()
     else "cpu"
+    # if torch.backends.mps.is_available()
+    # else "cpu"
 )
 
 MINI_BATCH_TRAINING = False

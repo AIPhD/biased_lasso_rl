@@ -36,20 +36,10 @@ def plot_cumulative_rewards_per_segment(total_reward,
 def plot_moving_average_reward(total_reward,
                                seg_len,
                                no_segment,
-                               mean_length=25,
-                               x_label="episodes",
-                               y_label="Accumulated mean reward per episode",
-                               plot_suffix='accumulated_mean_reward',
-                               plot_dir=None,
-                               transfer_learning=False):
+                               plot_label,
+                               mean_length=25):
     '''Plot the moving average of total rewards per episode as a function of episodes.'''
 
-    plt.xlabel(x_label)
-    plt.ylabel(y_label)
-    transfer_label = ''
-
-    if transfer_learning:
-        transfer_label = '_transfer'
 
     for i in range (no_segment - 1):
         plt.axvline((i + 1)*seg_len - mean_length, linestyle="--", color="r")
@@ -57,16 +47,40 @@ def plot_moving_average_reward(total_reward,
     running_average_reward = moving_average(total_reward, mean_length)
 
     plt.plot(np.arange(len(running_average_reward)) + mean_length,
-             running_average_reward)
-    # plt.show()
+             running_average_reward,
+             label=plot_label)
 
+
+def plot_multiple_moving_average_rewards(reward_lists,
+                                         legends,
+                                         x_label="episodes",
+                                         y_label="Accumulated mean reward per episode",
+                                         plot_suffix='accumulated_mean_reward',
+                                         plot_dir=None,
+                                         mean_length=25):
+    '''Plot multiple moving average rewards in one plot.'''
+
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    x_range = np.min([len(rewards) for rewards in reward_lists])
+
+    for rewards, legend in zip(reward_lists, legends):
+        plot_moving_average_reward(rewards[:x_range],
+                                   x_range,
+                                   no_segment=1,
+                                   plot_label=legend,
+                                   mean_length=mean_length)
+    
+    plt.legend(legends)
+    plt.tight_layout()
+        
     if plot_dir is not None:
-        plt.savefig(f'{plot_dir}/{plot_suffix+transfer_label}.pdf',
+        plt.savefig(f'{plot_dir}/{plot_suffix}.pdf',
                     dpi=800,
                     format= "pdf",
                     bbox_inches='tight',
                     pad_inches=0)
-
+    
     plt.close()
 
 

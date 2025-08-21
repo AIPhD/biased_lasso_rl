@@ -1,0 +1,10 @@
+*.pdf
+*.pt
+*.pyc
+*.pkl
+*.npy
+launch.json
+batch_script.sh
+stdout.txt
+/maze_project/saved_models
+/atari_project/saved_models

@@ -6,7 +6,9 @@ import random
 from collections import deque
 import torch
 import numpy as np
-import gym
+import multiprocessing as mp
+from stable_baselines3.common.vec_env import SubprocVecEnv
+import gymnasium as gym
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append("/home/ls131416/biased_lasso_rl/gym-examples")
 import gym_examples
@@ -34,31 +36,35 @@ GAME_TASKS = {'pathfinding': [1, 0, 0, 0],
               }
 
 
-def train_network(no_segments=c.NO_SEGMENTS,
+def make_env(seed, game):
+    def _init():
+        env = gym.make('gym_examples/GridWorld-v0',
+                       game=game,
+                       render_mode=c.RENDER)
+        env = gym.wrappers.TimeLimit(env, max_episode_steps=250)
+        env.reset(seed=seed)
+        return env
+    return _init    
+
+
+def train_dqn_network(no_segments=c.NO_SEGMENTS,
                   render_mode=c.RENDER,
-                  conv_net=c.CONVMODEL):
+                  conv_net=c.CONVMODEL,
+                  source_name=None):
     '''Function to train a model given the collected batch data set.'''
 
-    if c.LOAD_NETWORK:
-        if conv_net:
-            source_network = m.ConvNetwork().to(c.DEVICE)
-
-        else:
-            source_network = m.MazeFCNetwork().to(c.DEVICE)
-
-        source_network.load_state_dict(torch.load(c.MODEL_DIR + 'pathfinding_model'))
+    if source_name is not None:
+        source_network = m.MazePolicyNetwork().to(c.DEVICE)
+        source_network.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
         source_network.eval()
+
+        
         transfer_learning = True
 
     else:
-
-        if conv_net:
-            source_network = m.ConvNetwork().to(c.DEVICE)
-
-        else:
-            source_network = m.MazeFCNetwork().to(c.DEVICE)
-            source_network.init_weights_to_zero()
-            transfer_learning = False
+        source_network = m.MazePolicyNetwork().to(c.DEVICE)
+        source_network.init_weights_to_zero()
+        transfer_learning = False
 
     time_steps_required_array = []
 
@@ -73,15 +79,15 @@ def train_network(no_segments=c.NO_SEGMENTS,
             exploration_counter = loaded_dict['exploration_counter']
             eps_decline_counter = loaded_dict['eps_counter']
             target_update_counter = loaded_dict['target_update_counter']
-            replay_memory = torch.load(c.DATA_DIR + game_name + '_exploration_data.pt')
-            acc_reward_array = torch.load(c.DATA_DIR + game_name + '_rewards.pt')
-            loss_array = torch.load(c.DATA_DIR + game_name + '_loss.pt')
-            total_loss_array = torch.load(c.DATA_DIR + game_name + '_reg_loss.pt')
+            replay_memory = torch.load(c.DATA_DIR + game_name + '_exploration_data.pt', map_location=torch.device(c.DEVICE))
+            acc_reward_array = torch.load(c.DATA_DIR + game_name + '_rewards.pt', map_location=torch.device(c.DEVICE))
+            loss_array = torch.load(c.DATA_DIR + game_name + '_loss.pt', map_location=torch.device(c.DEVICE))
+            total_loss_array = torch.load(c.DATA_DIR + game_name + '_reg_loss.pt', map_location=torch.device(c.DEVICE))
             network_model = m.MazeFCNetwork().to(c.DEVICE)
-            network_model.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model'))
+            network_model.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_model', map_location=torch.device(c.DEVICE)))
             network_model.eval()
             target_net = m.MazeFCNetwork().to(c.DEVICE)
-            target_net.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_target_model'))
+            target_net.load_state_dict(torch.load(c.MODEL_DIR + game_name + '_target_model', map_location=torch.device(c.DEVICE)))
             target_net.eval()
 
         else:
@@ -247,18 +253,18 @@ def train_network(no_segments=c.NO_SEGMENTS,
     return network_model
 
 
-def train_a2c_network(game_name='onlycoincollecting', source_name=None):
+def train_a2c_network(game_name='onlycoincollecting', source_name=None, n_envs=1, transfer='lasso'):
     '''Train policy based on the advantage a2c framework.'''
 
     if source_name is not None:
         source_network = m.MazePolicyNetwork().to(c.DEVICE)
-        source_network.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy'))
+        source_network.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
         source_network.eval()
         network_policy = m.MazePolicyNetwork().to(c.DEVICE)
-        network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy'))
-        network_policy.eval()
+        # network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
+        # network_policy.eval()
         network_value_function = m.MazeValueNetwork().to(c.DEVICE)
-        # network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy'))
+        # network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
         # network_policy.eval()
         
         transfer_learning = True
@@ -270,89 +276,96 @@ def train_a2c_network(game_name='onlycoincollecting', source_name=None):
         network_policy = m.MazePolicyNetwork().to(c.DEVICE)
         transfer_learning = False
 
+    for param in source_network.parameters():
+            param.requires_grad = False
+
     acc_reward_array = []
     loss_array = []
     total_loss_array = []
     game = GAME_TASKS[game_name]
+    env_fns = [make_env(i, game) for i in range(n_envs)]
+    vec_env = SubprocVecEnv(env_fns)
+    action_space = vec_env.action_space
+    obs = vec_env.reset()
+    # env.close()
+    state = create_fc_state_vector_mult_proc(obs, n_envs)
+    accumulated_reward = np.zeros(n_envs)
+    replay_memory = deque([], maxlen=c.CAPACITY)
+    batch = deque([], maxlen=c.CAPACITY)
 
-    for episode in range(c.EPISODES):
+    for i in range(c.TIME_STEPS):
 
-        env = gym.make('gym_examples/GridWorld-v0', game=game, render_mode=c.RENDER)
-        action_space = env.action_space
-        obs = env.reset()
-        # env.close()
-        state = create_fc_state_vector(obs)
-        accumulated_reward = 0
-        replay_memory = deque([], maxlen=c.CAPACITY)
+        vec_env.render()
+        # time.sleep(0.1)
+        # action = env.action_space.sample()
+        term_bool = np.ones(n_envs)
+        action = select_action(network_policy(state),
+                                0,
+                                False,
+                                replay_memory,
+                                action_space,
+                                n_envs=n_envs)
+        next_obs, reward, done, infos = vec_env.step(action)
+        # print(reward)
+        next_state = create_fc_state_vector_mult_proc(next_obs, n_envs)
 
-        for i in range(c.TIME_STEPS):
+        for k in range(n_envs):
+            if done[k]:
+                term_bool[k] = 0
+            batch.append(o.Transition(state[k],
+                                      action[k],
+                                      next_state[k],
+                                      reward[k],
+                                      term_bool[k]))
 
-            env.render()
-            # time.sleep(0.1)
-            # action = env.action_space.sample()
-            term_bool = 1
-            action = select_action(network_policy(state),
-                                   0,
-                                   False,
-                                   replay_memory,
-                                   action_space)
-            next_obs, reward, done, _, _ = env.step(action)
+        replay_memory.append(o.Transition(state,
+                                          action,
+                                          next_state,
+                                          reward,
+                                          term_bool))
+        accumulated_reward += np.asarray(reward)
+        state = next_state
 
-            if done:
-                term_bool = 0
+        if ((i + 1) % c.BATCH_SIZE)==0:
+            replay_memory_batch = o.Transition(*zip(*replay_memory))
+            reward_batch = torch.from_numpy(np.asarray(replay_memory_batch.reward)).to(c.DEVICE)
+            term_batch = torch.from_numpy(np.asarray(replay_memory_batch.terminated)).to(c.DEVICE)
+            q_values = o.calculate_q_value_batch(term_batch,
+                                                 network_value_function,
+                                                 reward_batch,
+                                                 next_state,
+                                                 c.BATCH_SIZE,
+                                                 n_envs,
+                                                 gamma=c.GAMMA)
 
-            big_r = term_bool*network_value_function(state)[0]
-            accumulated_reward += reward
-            next_state = create_fc_state_vector(next_obs)
-            replay_memory.append(o.Transition(state,
-                                              action,
-                                              next_state,
-                                              reward,
-                                              term_bool))
-            state = next_state
+            loss_value, total_loss = o.a2c_optimization(network_policy,
+                                                        network_value_function,
+                                                        source_network,
+                                                        batch,
+                                                        q_values,
+                                                        learning_rate=c.LEARNING_RATE,
+                                                        lamb_lasso=c.LAMB_LASSO/(c.BATCH_SIZE*n_envs),
+                                                        lamb_ridge=c.LAMB_RIDGE,
+                                                        transfer_learning=transfer_learning,
+                                                        transfer=transfer)
+            replay_memory = deque([], maxlen=c.CAPACITY)
+            batch = deque([], maxlen=c.CAPACITY)
+            loss_array.append(loss_value)
+            total_loss_array.append(total_loss)
+            acc_reward_array.append(accumulated_reward)
+            print(accumulated_reward)
+            accumulated_reward = np.zeros(n_envs)
+            total_loss = 0
+            loss_value = 0
 
-            if done:
-                print(f"Episode finished after {i+1} timesteps.")
-                break
-
-        loss_value, total_loss = o.a2c_optimization(network_policy,
-                                                    network_value_function,
-                                                    source_network,
-                                                    replay_memory,
-                                                    big_r,
-                                                    c.GAMMA,
-                                                    learning_rate=c.LEARNING_RATE,
-                                                    lamb_lasso=c.LAMB_LASSO/np.sqrt(len(replay_memory)),
-                                                    lamb_ridge=c.LAMB_RIDGE/np.sqrt(len(replay_memory)),
-                                                    transfer_learning=transfer_learning)
-        loss_array.append(loss_value)
-        total_loss_array.append(total_loss)
-        print(f"{episode + 1} episode(s) done.")
-        print(f'Accumulated a total reward of {accumulated_reward}.')
-        acc_reward_array.append(accumulated_reward)
-
-        if (episode + 1) % c.SAVE_PERIOD == 0:
-
-            print('Save Plots and Model')
-            e.plot_moving_average_reward(np.asarray(acc_reward_array),
-                                        len(np.asarray(acc_reward_array)),
-                                        1,
-                                        plot_suffix=game_name+f'_source_{source_name}_accumulated_rmr_a2c_residual_lamb_{c.LAMB_LASSO}',
-                                        plot_dir=c.PLOT_DIR,
-                                        transfer_learning=transfer_learning)
-            e.plot_loss_function(loss_array,
-                                 len(loss_array),
-                                 plot_suffix=game_name+'_loss_evolution_a2c',
-                                 plot_dir=c.PLOT_DIR)
+        if ((i + 1) % c.BATCH_SIZE*100) == 0:
+            print('Save Plotdata and Model')
+            np.save(c.DATA_DIR+game_name+f'_source_{source_name}_accumulated_rmr_a2c_residual_lamb_{c.LAMB_LASSO}_transfer_{transfer}', np.asarray(acc_reward_array).flatten())
+            np.save(c.DATA_DIR+game_name+f'_source_{source_name}_accumulated_loss_a2c_residual_lamb_{c.LAMB_LASSO}_transfer_{transfer}', loss_array)
             torch.save(network_value_function.state_dict(), c.MODEL_DIR + game_name + '_value')
             torch.save(network_policy.state_dict(), c.MODEL_DIR + game_name + '_policy')
-            # e.plot_loss_function(total_loss_array,
-            #                      len(total_loss_array),
-            #                      y_label='Regularized Loss',
-            #                      plot_suffix=game_name+'_total_loss_evolution_a3c',
-            #                      plot_dir=c.PLOT_DIR)
 
-    env.close()
+    vec_env.close()
 
 
 def create_fc_state_vector(observation):
@@ -369,14 +382,39 @@ def create_fc_state_vector(observation):
         state_vector[2, coin[0], coin[1]] = 1
 
     for trap in observation['traps']:
-        state_vector[2, trap[0], trap[1]] = 1
+        state_vector[3, trap[0], trap[1]] = 1
 
     for wall in observation['walls']:
-        state_vector[2, wall[0], wall[1]] = 1
+        state_vector[4, wall[0], wall[1]] = 1
 
     state_vector = torch.flatten(state_vector)
 
     return state_vector
+
+
+def create_fc_state_vector_mult_proc(observation, n_envs):
+    '''Convert Observation output from environmnet into a state variable for regular NN
+       with parallelization onto cpu cores.'''
+
+    # print(observation['coins'])
+    state_vector = torch.zeros(5, c.SIZE, c.SIZE, n_envs).to(c.DEVICE)
+    state_vector[0] =  torch.from_numpy(observation['agent']).to(c.DEVICE).T
+    state_vector[1] =  torch.from_numpy(observation['target']).to(c.DEVICE).T
+    state_vector[2] =  torch.from_numpy(observation['coins']).to(c.DEVICE).T
+    state_vector[3] =  torch.from_numpy(observation['traps']).to(c.DEVICE).T
+    state_vector[4] =  torch.from_numpy(observation['walls']).to(c.DEVICE).T
+    # state_vector[1, observation['target'][0], observation['target'][1]] = 1
+
+    # for i in range(n_envs):
+    #     state_vector[0, :, :, i] = torch.from_numpy(observation['agent'])[i]
+    #     state_vector[1, :, :, i] = torch.from_numpy(observation['target'])[i]
+    #     state_vector[2, :, :, i] = torch.from_numpy(observation['coins'])[i]
+    #     state_vector[3, :, :, i] = torch.from_numpy(observation['traps'])[i]
+    #     state_vector[4, :, :, i] = torch.from_numpy(observation['walls'])[i]
+
+    state_vector = torch.reshape(state_vector, (5 * c.SIZE * c.SIZE, n_envs))
+
+    return state_vector.T
 
 
 def create_conv_state_vector(observation):
@@ -392,34 +430,35 @@ def create_conv_state_vector(observation):
     return state_vector
 
 
-def select_action(network_output, epsilon, mc_explore, state_history, action_space, stochastic=True):
+def select_action(network_output, epsilon, mc_explore, state_history, action_space, stochastic=True, n_envs=1):
     '''Calculate, which action to take, with best estimated chance.'''
 
-    threshold = np.random.sample()
+    thresholds = np.random.sample(size=n_envs)
+    actions = np.zeros(n_envs, dtype=int)
 
-    if threshold < epsilon:
+    for i in range(n_envs):
+        if thresholds[i] < epsilon:
 
-        if mc_explore:
-            action = monte_carlo_exploration(state_history, action_space)
+            # if mc_explore:
+            #     action = monte_carlo_exploration(state_history, action_space) ADAPT FOR MULTI-ENVIRONMENT
+
+            actions[i] = np.random.randint(c.GRID_OUTPUT)
 
         else:
-            action = np.random.randint(c.GRID_OUTPUT)
-
-    else:
-        if torch.max(network_output).isnan():
-            print('Nan Value detected')
+            if torch.max(network_output).isnan():
+                print('Nan Value detected')
 
         # action = int(torch.argmax(network_output))
-        if stochastic:
-            prob_action = torch.nn.functional.softmax(torch.flatten(network_output), dim=0)
-            action = np.random.choice(np.arange(action_space.n),
-                                      p=prob_action.cpu().detach().numpy())
+            if stochastic:
+                prob_action = torch.nn.functional.softmax(torch.flatten(network_output[i]), dim=0)
+                actions[i] = np.random.choice(np.arange(action_space.n),
+                                        p=prob_action.cpu().detach().numpy())
 
-        else:
-            # action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
-            action = np.argmax(torch.flatten(network_output).cpu().detach().numpy())
+            else:
+                # action = np.random.choice(np.arange(4), p=prob_action.cpu().detach().numpy())
+                actions[i] = np.argmax(torch.flatten(network_output).cpu().detach().numpy())
 
-    return action
+    return actions
 
 
 def monte_carlo_exploration(state_history, action_space):
