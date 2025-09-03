@@ -212,6 +212,10 @@ class MazePolicyNetwork(nn.Module):
         self.sixthlayer.weight.data = torch.zeros(cm.GRID_OUTPUT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
         self.sixthlayer.bias.data = torch.zeros(cm.GRID_OUTPUT).to(cm.DEVICE)
         self.layer_res.weight.data = torch.zeros(cm.GRID_OUTPUT, cm.GRID_INPUT).to(cm.DEVICE)
+    
+    def init_head(self):
+        self.sixthlayer.weight.data = torch.zeros(cm.GRID_OUTPUT, cm.HIDDEN_NODE_COUNT).to(cm.DEVICE)
+        self.sixthlayer.bias.data = torch.zeros(cm.GRID_OUTPUT).to(cm.DEVICE)
 
 class MazeValueNetwork(nn.Module):
     '''A2C Value Network for mazes.'''

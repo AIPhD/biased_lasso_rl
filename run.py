@@ -16,10 +16,10 @@ def main():
     # tc.train_a2c_network()
     # tm.train_dqn_network(conv_net=False)
 
-    tm.train_a2c_network('coincollecting', source_name='onlycoincollecting', n_envs=16, transfer='lasso')
+    # tm.train_a2c_network('mazenavigating', source_name=None, n_envs=16, transfer=None)
 
-    # ta.train_a2c_network('Pong', source_name=None, n_envs=16, transfer=None)
-    # ta.train_a2c_baseline('Pong')
+    # ta.train_a2c_network('SpaceInvaders', source_name=None, n_envs=16, transfer=None)
+    ta.train_a2c_baseline('Galaxian')
 
     # tr.train_network()
     # ta.train_network()

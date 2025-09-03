@@ -12,6 +12,7 @@ import gymnasium as gym
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv, DummyVecEnv
+from stable_baselines3.common.monitor import Monitor
 from stable_baselines3 import A2C
 import optimization as o
 import models as m
@@ -25,7 +26,11 @@ ATARI_GAMES = {
                'Jamesbond': 'ALE/Jamesbond-v5',
                'Pong': 'ALE/Pong-v5',
                'Seaquest': 'ALE/Seaquest-v5',
-               'Riverraid': 'ALE/Riverraid-v5'
+               'Riverraid': 'ALE/Riverraid-v5',
+               'Phoenix': 'ALE/Phoenix-v5',
+               'Galaxian': 'ALE/Galaxian-v5',
+               'SpaceInvaders': 'ALE/SpaceInvaders-v5',
+               'DemonAttack': 'ALE/DemonAttack-v5'
                }
 
 
@@ -265,8 +270,9 @@ def train_dqn_network(render_mode=c.RENDER,
 
 
 def train_a2c_baseline(game_name):
-    env = make_vec_env(ATARI_GAMES[game_name], n_envs=8, vec_env_cls=SubprocVecEnv)
-    model = A2C('CnnPolicy', env, device=c.DEVICE)
+    env = make_vec_env(ATARI_GAMES[game_name], n_envs=16, vec_env_cls=SubprocVecEnv, monitor_dir=c.DATA_DIR)
+    # env.monitor = Monitor(env, filename=c.DATA_DIR)
+    model = A2C('CnnPolicy', env, device=c.DEVICE, verbose=1, ent_coef=0.01, vf_coef=0.5, max_grad_norm=0.5, rms_prop_eps=1e-5)
     model.learn(total_timesteps=c.TIME_STEPS)
     # model.saveweight(c.MODEL_DIR + game_name + '_a2c_model')
 

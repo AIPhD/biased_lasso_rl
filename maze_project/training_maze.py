@@ -261,8 +261,9 @@ def train_a2c_network(game_name='onlycoincollecting', source_name=None, n_envs=1
         source_network.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
         source_network.eval()
         network_policy = m.MazePolicyNetwork().to(c.DEVICE)
-        # network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
-        # network_policy.eval()
+        network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
+        network_policy.eval()
+        network_policy.init_head()
         network_value_function = m.MazeValueNetwork().to(c.DEVICE)
         # network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
         # network_policy.eval()
@@ -412,6 +413,7 @@ def create_fc_state_vector_mult_proc(observation, n_envs):
     #     state_vector[3, :, :, i] = torch.from_numpy(observation['traps'])[i]
     #     state_vector[4, :, :, i] = torch.from_numpy(observation['walls'])[i]
 
+    # print(state_vector[4,:,:,1])
     state_vector = torch.reshape(state_vector, (5 * c.SIZE * c.SIZE, n_envs))
 
     return state_vector.T

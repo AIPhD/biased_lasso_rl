@@ -11,6 +11,12 @@ def plot_baselines():
     centipede_reward_arrays = [np.load(f'{c.DATA_DIR}Centipede_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy')]
     centipede_legends_array = ['No Transfer']
 
+    galaxian_reward_arrays = [np.load(f'{c.DATA_DIR}Galaxian_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy')]
+    galaxian_legends_array = ['No Transfer']
+
+    phoenix_reward_arrays = [np.load(f'{c.DATA_DIR}Phoenix_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy')]
+    phoenix_legends_array = ['No Transfer']
+
     pong_reward_arrays = [np.load(f'{c.DATA_DIR}Pong_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy')]
     pong_legends_array = ['No Transfer']
 
@@ -41,4 +47,12 @@ def plot_baselines():
                                            plot_suffix='alien_A2C_accumulated_running_mean_reward',
                                            plot_dir=c.PLOT_DIR,
                                            mean_length=25*c.BATCH_SIZE)
+    
+    e.plot_multiple_moving_average_rewards(galaxian_reward_arrays,
+                                           galaxian_legends_array,
+                                           x_label='episodes',
+                                           y_label='Accumulated mean reward per episode',
+                                           plot_suffix='galaxian_A2C_accumulated_running_mean_reward',
+                                           plot_dir=c.PLOT_DIR,
+                                           mean_length=16*c.BATCH_SIZE)
     

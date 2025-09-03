@@ -91,7 +91,7 @@ def a2c_optimization(network_policy,
                      source_value_function,
                      acc_batch,
                      q_values,
-                     learning_rate=1,
+                     learning_rate=0.0001,
                      lamb_lasso=0,
                      lamb_ridge=0,
                      momentum=0,
@@ -111,8 +111,8 @@ def a2c_optimization(network_policy,
     batch = Transition(*zip(*acc_batch))
     state_batch = torch.stack(batch.state).to(c.DEVICE)
     action_batch = torch.tensor(batch.action).to(c.DEVICE)[:, None]
-    reward_batch = torch.tensor(batch.reward).to(c.DEVICE)
-    term_batch = torch.tensor(batch.terminated).to(c.DEVICE)
+    # reward_batch = torch.tensor(batch.reward).to(c.DEVICE)
+    # term_batch = torch.tensor(batch.terminated).to(c.DEVICE)
     l2_reg = None
     l1_reg = None
 
@@ -140,6 +140,12 @@ def a2c_optimization(network_policy,
                 l1_reg = param.norm(1)
 
             elif 'firstlayer.weight' in name:
+                l1_reg = l1_reg + param.norm(1)
+            
+            if l1_reg is None and 'secondlayer.weight' in name:
+                l1_reg = param.norm(1)
+
+            elif 'secondlayer.weight' in name:
                 l1_reg = l1_reg + param.norm(1)
             
         

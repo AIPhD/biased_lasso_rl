@@ -57,12 +57,17 @@ def plot_multiple_moving_average_rewards(reward_lists,
                                          y_label="Accumulated mean reward per episode",
                                          plot_suffix='accumulated_mean_reward',
                                          plot_dir=None,
-                                         mean_length=25):
+                                         mean_length=25,
+                                         x_lim=None):
     '''Plot multiple moving average rewards in one plot.'''
 
     plt.xlabel(x_label)
     plt.ylabel(y_label)
-    x_range = np.min([len(rewards) for rewards in reward_lists])
+
+    if x_lim is not None:
+        x_range = np.min(np.min([len(rewards) for rewards in reward_lists]+[x_lim]))
+    else:
+        x_range = np.min([len(rewards) for rewards in reward_lists])
 
     for rewards, legend in zip(reward_lists, legends):
         plot_moving_average_reward(rewards[:x_range],
