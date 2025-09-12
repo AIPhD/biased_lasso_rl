@@ -11,8 +11,10 @@ def plot_baselines():
     centipede_reward_arrays = [np.load(f'{c.DATA_DIR}Centipede_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy')]
     centipede_legends_array = ['No Transfer']
 
-    galaxian_reward_arrays = [np.load(f'{c.DATA_DIR}Galaxian_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy')]
-    galaxian_legends_array = ['No Transfer']
+    galaxian_reward_arrays = [np.load(f'{c.DATA_DIR}Galaxian_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy'),
+                              np.load(f'{c.DATA_DIR}Galaxian_source_Centipede_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_group_lasso_kernel.npy')]
+    galaxian_legends_array = ['No Transfer',
+                              'Transfer from Centipede']
 
     phoenix_reward_arrays = [np.load(f'{c.DATA_DIR}Phoenix_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy')]
     phoenix_legends_array = ['No Transfer']
@@ -22,6 +24,11 @@ def plot_baselines():
 
     alien_reward_arrays = [np.load(f'{c.DATA_DIR}Alien_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy')]
     alien_legends_array = ['No Transfer']
+
+    invaders_reward_arrays = [np.load(f'{c.DATA_DIR}SpaceInvaders_source_{None}_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_None.npy'),
+                              np.load(f'{c.DATA_DIR}SpaceInvaders_source_Centipede_accumulated_rmr_a2c_residual_lamb_{0.0}_transfer_group_lasso_kernel.npy')]
+    invaders_legends_array = ['No Transfer',
+                              'Transfer from Centipede']
 
 
     e.plot_multiple_moving_average_rewards(centipede_reward_arrays,
@@ -53,6 +60,20 @@ def plot_baselines():
                                            x_label='episodes',
                                            y_label='Accumulated mean reward per episode',
                                            plot_suffix='galaxian_A2C_accumulated_running_mean_reward',
+                                           plot_dir=c.PLOT_DIR,
+                                           mean_length=16*c.BATCH_SIZE)
+    e.plot_multiple_moving_average_rewards(phoenix_reward_arrays,
+                                           phoenix_legends_array,
+                                           x_label='episodes',
+                                           y_label='Accumulated mean reward per episode',
+                                           plot_suffix='phoenix_A2C_accumulated_running_mean_reward',
+                                           plot_dir=c.PLOT_DIR,
+                                           mean_length=16*c.BATCH_SIZE)
+    e.plot_multiple_moving_average_rewards(invaders_reward_arrays,
+                                           invaders_legends_array,
+                                           x_label='episodes',
+                                           y_label='Accumulated mean reward per episode',
+                                           plot_suffix='invaders_A2C_accumulated_running_mean_reward',
                                            plot_dir=c.PLOT_DIR,
                                            mean_length=16*c.BATCH_SIZE)
     

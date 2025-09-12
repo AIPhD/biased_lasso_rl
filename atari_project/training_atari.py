@@ -58,12 +58,6 @@ def train_dqn_network(render_mode=c.RENDER,
                       transfer_learning=False):
     '''Function to run and train a dqn model. Data is collected given an epsilon-greedy policy'''
 
-    # if c.LOAD_EXPLORATION:
-    #     replay_memory = torch.load(c.DATA_DIR + 'exploration_data.pt')
-    # else:
-    #     replay_memory = deque([], maxlen=c.CAPACITY)
-
-
     if c.LOAD_NETWORK:
 
         source_network = m.AtariNetwork(action_space.n).to(c.DEVICE)
@@ -160,7 +154,7 @@ def train_dqn_network(render_mode=c.RENDER,
                 update_q += 1
 
                 if len(replay_memory) >= c.BATCH_SIZE and len(replay_memory) >= c.EXPLORATION and update_q >= c.UPDATE_Q:
-                    loss_value, total_loss = o.optimization_step(network_model,
+                    loss_value, total_loss = o.dqn_optimization_step(network_model,
                                                                  target_net,
                                                                  replay_memory,
                                                                  c.GAMMA,
@@ -295,14 +289,13 @@ def train_a2c_network(game_name, source_name=None, n_envs=5, transfer='group_las
 
     if source_name is not None:
         source_network = m.AtariPolicyNetwork(action_space.n).to(c.DEVICE)
-        source_network.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
+        source_network.copy_layers(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
         source_network.eval()
         network_policy = m.AtariPolicyNetwork(action_space.n).to(c.DEVICE)
         # network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
         # network_policy.eval()
+        # network_policy.init_head()
         network_value_function = m.AtariValueNetwork().to(c.DEVICE)
-        # network_policy.load_state_dict(torch.load(c.MODEL_DIR + source_name + '_policy', map_location=torch.device(c.DEVICE)))
-        # network_policy.eval()
         transfer_learning = True
 
     else:
@@ -386,7 +379,7 @@ def train_a2c_network(game_name, source_name=None, n_envs=5, transfer='group_las
         if (t+1) % (c.BATCH_SIZE*10) == 0:
             print('Save Plots and Data')
             np.save(c.DATA_DIR+game_name+f'_source_{source_name}_accumulated_rmr_a2c_residual_lamb_{c.LAMB_LASSO}_transfer_{transfer}', np.asarray(acc_reward_array).flatten())
-            np.save(game_name+f'_source_{source_name}_accumulated_loss_a2c_residual_lamb_{c.LAMB_LASSO}_transfer_{transfer}', loss_array)
+            np.save(c.DATA_DIR+game_name+f'_source_{source_name}_accumulated_loss_a2c_residual_lamb_{c.LAMB_LASSO}_transfer_{transfer}', loss_array)
             torch.save(network_value_function.state_dict(), c.MODEL_DIR + game_name + '_value')
             torch.save(network_policy.state_dict(), c.MODEL_DIR + game_name + '_policy')
             

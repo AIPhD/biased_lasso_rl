@@ -49,15 +49,6 @@ def dqn_optimization_step(network_model,
     l2_reg = None
     l1_reg = None
 
-    # if transfer_learning:
-    #     reg_vector = network_param_difference(network_model, source_network)
-
-    # else:
-    #     reg_vector = []
-
-    #     for key in network_model.state_dict():
-    #         reg_vector.append(network_model.state_dict()[key])
-
     for name, param in network_param_difference(network_model, source_network, transfer_learning):
 
         if l1_reg is None and 'weight' in name:
@@ -91,6 +82,7 @@ def a2c_optimization(network_policy,
                      source_value_function,
                      acc_batch,
                      q_values,
+                     entr_coef=0,
                      learning_rate=0.0001,
                      lamb_lasso=0,
                      lamb_ridge=0,
@@ -111,22 +103,9 @@ def a2c_optimization(network_policy,
     batch = Transition(*zip(*acc_batch))
     state_batch = torch.stack(batch.state).to(c.DEVICE)
     action_batch = torch.tensor(batch.action).to(c.DEVICE)[:, None]
-    # reward_batch = torch.tensor(batch.reward).to(c.DEVICE)
-    # term_batch = torch.tensor(batch.terminated).to(c.DEVICE)
-    l2_reg = None
-    l1_reg = None
-
-    # for i in range(len(reward_batch)):
-    #     big_r = gamma*big_r*term_batch[-i-1] + reward_batch[-i-1]
-    #     q_values[-i-1] = big_r
-        # policy_loss = torch.nn.functional.log_softmax(network_policy(state_batch[-i-1][None,:, :, :]),
-        #                                               dim=1)[0, action_batch[-i-1][0]]*(big_r.detach() -
-        #                                                                                 network_value_function(state_batch[-i-1][None, :, :, :]).detach())[0][0]
-        # value_loss = criterion(big_r.detach()[0][0], network_value_function(state_batch[-i-1][None, :, :, :])[0][0])
-        # policy_loss.backward()
-        # value_loss.backward()  
 
     if transfer == 'lasso':
+        l1_reg = None
 
         for name, param in network_param_difference(network_policy, source_value_function, transfer_learning):
 
@@ -151,44 +130,69 @@ def a2c_optimization(network_policy,
         
         reg_param = l1_reg
 
-    if transfer == 'group_lasso':
-
+    elif transfer == 'group_lasso':
         group_lasso_reg = None
 
         for name, param in network_param_difference(network_policy, source_value_function, transfer_learning):
 
-            # if 'layer.weight' in name:
-            if group_lasso_reg is None:
-                group_lasso_reg = param.norm(2)
+            if name in network_policy.transfer_kernels + network_policy.transfer_linear + network_policy.transfer_bias:
 
-            else:
-                group_lasso_reg = group_lasso_reg + param.norm(2)
+                if group_lasso_reg is None:
+                    group_lasso_reg = param.norm(2)
+
+                else:
+                    group_lasso_reg = group_lasso_reg + param.norm(2)
         
         reg_param = group_lasso_reg
+    
+    elif transfer == 'group_lasso_kernel':
+        
+        group_lasso_reg = None
+
+        for name, param in network_param_difference(network_policy, source_value_function, transfer_learning):
+
+            if name in network_policy.transfer_kernels:
+                total_kernel_reg = 0
+
+                for i in range(param.shape[0]):
+                    total_kernel_reg += param[i].norm(2)
+
+                if group_lasso_reg is None:
+                    group_lasso_reg = total_kernel_reg
+
+                else:
+                    group_lasso_reg += total_kernel_reg
             
+            if name in network_policy.transfer_linear:
+                if group_lasso_reg is None:
+                    group_lasso_reg = param.norm(2)
+
+                else:
+                    group_lasso_reg = group_lasso_reg + param.norm(2)
+            
+            if name in network_policy.transfer_bias:
+                if group_lasso_reg is None:
+                    group_lasso_reg = param.norm(2)
+
+                else:
+                    group_lasso_reg = group_lasso_reg + param.norm(2)
+        
+        reg_param = group_lasso_reg
     
     else:
         reg_param = 0
 
-        # for name, ridge_param in network_value_function.named_parameters():
-
-        #     if l2_reg is None and 'weight' in name:
-        #         l2_reg = ridge_param.norm(2)**2
-
-        #     elif 'weight' in name:
-        #         l2_reg = l2_reg + ridge_param.norm(2)**2
-
-
+    l_entr = torch.distributions.Categorical(logits=torch.nn.functional.log_softmax(network_policy(state_batch), dim=1))
+    entropy = l_entr.entropy().mean()
     value_loss = (q_values.detach() - network_value_function(state_batch)[:, 0]).pow(2).mean() # + lamb_lasso*l1_reg + lamb_ridge*l2_reg
     value_loss.backward()
     value_optimizer.step()
     policy_loss = (-torch.nn.functional.log_softmax(network_policy(state_batch),
                                                     dim=1)[torch.arange(len(acc_batch)),
                                                            action_batch[:, 0]]*(q_values.detach() -
-                                                                                network_value_function(state_batch)[:, 0].detach())).mean()+ lamb_lasso*reg_param
+                                                                                network_value_function(state_batch)[:, 0].detach())).mean()+ lamb_lasso*reg_param #+ entr_coef*entropy
     policy_loss.backward()
     policy_optimizer.step()
-
     return value_loss.detach().cpu().numpy(), policy_loss.detach().cpu().numpy()
 
 def network_param_difference(target_net, source_net, transfer_learning):
@@ -199,7 +203,11 @@ def network_param_difference(target_net, source_net, transfer_learning):
     for param_target, param_source in zip(target_net.named_parameters(), source_net.named_parameters()):
 
         if transfer_learning:
-            regularization_vector = param_target[1] - param_source[1]
+            try:
+                regularization_vector = param_target[1] - param_source[1]
+            except:
+                regularization_vector = param_target[1]
+                print("Parameter mismatch in transfer learning. Likely incomatible dimensions in the last layer.")
 
         else:
             regularization_vector = param_target[1]
@@ -221,58 +229,3 @@ def calculate_q_value_batch(term_batch, network_value_function, reward_batch, la
             q_values[-j-1][i] = big_r
 
     return torch.flatten(q_values)
-
-
-def prox(v, u, *, lambda_, lambda_bar, M):
-    """
-    v has shape (m,) or (m, batches)
-    u has shape (k,) or (k, batches)
-
-    supports GPU tensors
-    """
-    onedim = len(v.shape) == 1
-    if onedim:
-        v = v.unsqueeze(-1)
-        u = u.unsqueeze(-1)
-
-    u_abs_sorted = torch.sort(u.abs(), dim=0, descending=True).values
-
-    k, batch = u.shape
-
-    s = torch.arange(k + 1.0).view(-1, 1).to(v)
-    zeros = torch.zeros(1, batch).to(u)
-
-    a_s = lambda_ - M * torch.cat(
-        [zeros, torch.cumsum(u_abs_sorted - lambda_bar, dim=0)]
-    )
-
-    norm_v = torch.norm(v, p=2, dim=0)
-
-    x = F.relu(1 - a_s / norm_v) / (1 + s * M**2)
-
-    w = M * x * norm_v
-    intervals = soft_threshold(lambda_bar, u_abs_sorted)
-    lower = torch.cat([intervals, zeros])
-
-    idx = torch.sum(lower > w, dim=0).unsqueeze(0)
-
-    x_star = torch.gather(x, 0, idx).view(1, batch)
-    w_star = torch.gather(w, 0, idx).view(1, batch)
-
-    beta_star = x_star * v
-    theta_star = sign_binary(u) * torch.min(soft_threshold(lambda_bar, u.abs()), w_star)
-
-    if onedim:
-        beta_star.squeeze_(-1)
-        theta_star.squeeze_(-1)
-
-    return beta_star, theta_star
-
-
-def soft_threshold(l, x):
-    return torch.sign(x) * torch.relu(torch.abs(x) - l)
-
-
-def sign_binary(x):
-    ones = torch.ones_like(x)
-    return torch.where(x >= 0, ones, -ones)

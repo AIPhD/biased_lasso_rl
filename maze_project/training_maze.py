@@ -19,21 +19,7 @@ import optimization as o
 import models as m
 import evaluation as e
 from maze_project import config_maze as c
-
-
-GAME_TASKS = {'pathfinding': [1, 0, 0, 0],
-              'coincollecting': [1, 1, 0, 0],
-              'onlycoincollecting': [0, 1, 0, 0],
-              'trapavoiding': [1, 0, 1, 0],
-              'onlytraps': [0, 0, 1, 0],
-              'mazenavigating': [1, 0, 0, 1],
-              'coinsandtraps': [1, 1, 1, 0],
-              'onlycoinsandtraps': [0, 1, 1, 0],
-              'coinsinmaze': [1, 1, 0, 1],
-              'onlycoinsinmaze': [0, 1, 0, 1],
-              'trapsinmaze': [1, 0, 1, 1],
-              'completetask': [1, 1, 1, 1]
-              }
+from maze_project import task_dict as td
 
 
 def make_env(seed, game):
@@ -69,7 +55,7 @@ def train_dqn_network(no_segments=c.NO_SEGMENTS,
     time_steps_required_array = []
 
 
-    for game_name, game in GAME_TASKS.items():
+    for game_name, game in td.GAME_TASKS.items():
 
         if c.LOAD_SEGMENT:
         
@@ -283,7 +269,7 @@ def train_a2c_network(game_name='onlycoincollecting', source_name=None, n_envs=1
     acc_reward_array = []
     loss_array = []
     total_loss_array = []
-    game = GAME_TASKS[game_name]
+    game = td.GAME_TASKS[game_name]
     env_fns = [make_env(i, game) for i in range(n_envs)]
     vec_env = SubprocVecEnv(env_fns)
     action_space = vec_env.action_space
@@ -404,18 +390,7 @@ def create_fc_state_vector_mult_proc(observation, n_envs):
     state_vector[2] =  torch.from_numpy(observation['coins']).to(c.DEVICE).T
     state_vector[3] =  torch.from_numpy(observation['traps']).to(c.DEVICE).T
     state_vector[4] =  torch.from_numpy(observation['walls']).to(c.DEVICE).T
-    # state_vector[1, observation['target'][0], observation['target'][1]] = 1
-
-    # for i in range(n_envs):
-    #     state_vector[0, :, :, i] = torch.from_numpy(observation['agent'])[i]
-    #     state_vector[1, :, :, i] = torch.from_numpy(observation['target'])[i]
-    #     state_vector[2, :, :, i] = torch.from_numpy(observation['coins'])[i]
-    #     state_vector[3, :, :, i] = torch.from_numpy(observation['traps'])[i]
-    #     state_vector[4, :, :, i] = torch.from_numpy(observation['walls'])[i]
-
-    # print(state_vector[4,:,:,1])
     state_vector = torch.reshape(state_vector, (5 * c.SIZE * c.SIZE, n_envs))
-
     return state_vector.T
 
 

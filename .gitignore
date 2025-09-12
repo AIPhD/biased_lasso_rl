@@ -3,6 +3,7 @@
 *.pyc
 *.pkl
 *.npy
+*.csv
 launch.json
 batch_script.sh
 stdout.txt
