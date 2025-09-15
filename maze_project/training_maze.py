@@ -11,7 +11,7 @@ from stable_baselines3.common.vec_env import SubprocVecEnv
 import gymnasium as gym
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append("/home/ls131416/biased_lasso_rl/gym-examples")
-import gym_examples
+# import gym_examples
 # from gym_examples.envs.grid_world import GridWorldEnv
 # from gym_examples.wrappers import RelativePosition
 

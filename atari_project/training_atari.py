@@ -7,7 +7,7 @@ import torch
 # import tensorflow as tf
 # from tensorflow import keras
 import ale_py
-import shimmy
+# import shimmy
 import gymnasium as gym
 from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
 from stable_baselines3.common.env_util import make_vec_env
