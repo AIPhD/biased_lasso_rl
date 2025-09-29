@@ -2,6 +2,7 @@ import json
 from collections import namedtuple
 import torch
 import config as c
+import gymnasium as gym
 
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'terminated'))
 
@@ -47,18 +48,19 @@ def create_batches(sample):
     return states, actions, next_states, rewards, term_bools
 
 
-def calculate_q_value_batch_a2c(term_batch, critic, reward_batch, last_state, n_envs, gamma=0.9):
+def calculate_q_target_batch(term_batch, critic, reward_batch, last_state, n_envs=1, gamma=0.9):
     '''Calculate the q value for the batch of states and rewards.'''
 
-    q_values = torch.zeros(len(term_batch), n_envs).to(c.DEVICE)
+    q_values = torch.zeros(len(term_batch)).to(c.DEVICE)
 
     for i in range(n_envs):
-        big_r = term_batch[-1][i]*critic(last_state)[:, 0][i]
-        for j in range(len(term_batch)):
-            big_r = gamma*term_batch[-j-1][i]*big_r + reward_batch[-j-1][i]
-            q_values[-j-1][i] = big_r
+        big_r = term_batch[-n_envs + i]*critic(last_state)[i]
+        for j in range(0, len(term_batch)//n_envs):
+            big_r = gamma*term_batch[(-j-1)*n_envs + i]*big_r + reward_batch[(-j-1)*n_envs + i]
+            q_values[(-j-1)*n_envs + i] = big_r
 
-    return torch.flatten(q_values)
+    return q_values
+
 
 def import_json(file):
     pass

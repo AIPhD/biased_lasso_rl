@@ -39,70 +39,94 @@ class MazeA2CLearning():
         self.transfer = transfer
         self.n_envs = n_envs
 
+
+    def make_env(self, seed, game):
+        def _init():
+            '''Helper function to create multiple environments for parallel processing.'''
+            env = gym.make('gym_examples/GridWorld-v0',
+                            game=game,
+                            render_mode='rgb_array',
+                            size=self.grid_size)
+            env = gym.wrappers.TimeLimit(env, max_episode_steps=250)
+            env.reset(seed=seed)
+            return env
+        return _init
+
+
     def train_agent(self):
         '''Simulate environment and train the agent.'''
 
-        env = gym.make('gym_examples/GridWorld-v0', game=self.game_name, render_mode='rgb_array')
-        no_actions = env.action_space.n
+        env_fns = [self.make_env(i, self.game) for i in range(self.n_envs)]
+        vec_env = SubprocVecEnv(env_fns)
+        no_actions = vec_env.action_space.n
 
         if self.source_network is not None:
             actor = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
             actor.load_state_dict(torch.load(self.source_network))
-            critic = MazeNetwork(self.grid_size, 1).to(cm.DEVICE)
-            critic.load_state_dict(torch.load(self.source_network))
             actor.re_init_head()
-            critic.re_init_head()
 
         else:
             actor = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
-            critic = MazeNetwork(self.grid_size, 1).to(cm.DEVICE)
+            actor.initialize_network()
 
-        obs, _ = env.reset()
-        state = create_maze_state(obs, size=self.grid_size)
+        critic = MazeNetwork(self.grid_size, 1).to(cm.DEVICE)    
+        critic.initialize_network()
+        obs = vec_env.reset()
+        state = create_fc_state_vector_mult_proc(obs, size=self.grid_size, n_envs=self.n_envs)
+        sample = []
 
         for i in range(self.time_steps):
-            sample = []
-            env.render()
+            vec_env.render()
             model_output = actor(torch.from_numpy(state)).to(cm.DEVICE)
-            action = self.select_action(model_output, self.epsilon, stochastic=True)
+            actions = self.select_action(model_output, self.epsilon, stochastic=True)
             self.epsilon = max(self.epsilon - i*(self.epsilon-self.eps_min)/self.eps_decay, self.eps_min)
-            next_obs, reward, term, trunc, _ = env.step(action)
-            next_state = create_maze_state(next_obs, self.grid_size)
-            sample.append(hf.Transition(state, action, next_state, reward, term))
+            next_obs, reward, term, trunc, _ = vec_env.step(actions)
+            next_state = create_fc_state_vector_mult_proc(next_obs, size=self.grid_size, n_envs=self.n_envs)
+
+            for i in range(self.n_envs):
+                sample.append(hf.Transition(state[i],
+                                            actions[i],
+                                            next_state[i],
+                                            reward[i],
+                                            term[i]))
+
             state = next_state
 
-            if i > self.batch_size:
-                self.optimize_model(actor, critic, sample)
-
             if term or trunc:
-                obs, _ = env.reset()
-                state = create_maze_state(obs, self.grid_size)
+                self.optimize_model(actor, critic, sample)
+                obs = vec_env.reset()
+                state = create_fc_state_vector_mult_proc(obs, size=self.grid_size, n_envs=self.n_envs)
                 sample = []
         
-        env.close()
+        vec_env.close()
             
 
     def select_action(self, policy_output, epsilon):
         '''Select action based on epsilon-greedy policy.'''
         
-        threshold = random.random()
+        thresholds = np.random.sample(size=self.n_envs)
+        actions = np.zeros(self.n_envs, dtype=int)
+    
+        for i in range(self.n_envs):
+            if thresholds[i] > epsilon:
 
-        if threshold > epsilon:
+                if torch.max(policy_output).isnan():
+                    print('Nan Value detected')
 
-            if self.stochastic:
-                probabilities = f.softmax(policy_output, dim=0)
-                action = np.random.choice(np.arange(len(probabilities)), p=probabilities.cpu().detach().numpy())
+                if self.stochastic:
+                    probabilities = f.softmax(policy_output[i], dim=0)
+                    actions[i] = np.random.choice(np.arange(len(probabilities)), p=probabilities.cpu().detach().numpy())
 
+                else:
+                    actions[i] = torch.argmax(policy_output[i]).cpu().detach().numpy()
+            
             else:
-                action = torch.argmax(policy_output).cpu().detach().numpy()
+                actions[i] = np.random.randint(4)
         
-        else:
-            action = random.randint(4)
-        
-        return action
+        return actions
 
     def optimize_model(self, actor, critic, sample):
-        '''Optimization step for DQN algorithm.'''
+        '''Optimization step for A2C algorithm.'''
         
         loss = nn.MSELoss()
         actor_optimizer = optim.Adam(actor.parameters(),
@@ -115,8 +139,8 @@ class MazeA2CLearning():
         critic_optimizer.zero_grad()
         states, actions, next_states, rewards, term_bools = hf.create_batches(sample)
         critic_out = critic(states)
-        critic_target = hf.calculate_q_value_batch_a2c(term_bools, critic, rewards, next_states[-1],
-                                                       self.n_envs, self.gamma)
+        critic_target = hf.calculate_q_target_batch(term_bools, critic, rewards, next_states[-self.n_envs:],
+                                                    self.n_envs, self.gamma)
         critic_loss = loss(critic_out, critic_target.detach())
         actor_loss = (f.log_softmax(actor(states),
                                     dim=1).gather(1, actions[:, 0])*(critic_target -
@@ -177,6 +201,8 @@ class MazeDQNLearning():
         else:
             model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
             target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            model.initialize_network()
+            target.initialize_network()
 
         obs, _ = env.reset()
         state = create_maze_state(obs, self.grid_size)
@@ -296,6 +322,8 @@ class MazeDDQNLearning():
         else:
             model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
             target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            model.initialize_network()
+            target.initialize_network()
 
         obs, _ = env.reset()
         state = create_maze_state(obs, self.grid_size)
@@ -403,16 +431,37 @@ class MazeNetwork(nn.Module):
         x = f.relu(self.layer5(x))
         x = self.layer6(x) + self.layerres1(x_input)
         return x
-    
+
+    def initialize_network(self, gain=1):
+        for layer in [self.layer1, self.layer2, self.layer3, self.layer4, self.layer5]:
+            nn.init.kaiming_uniform_(layer.weight, nonlinearity='relu')
+            nn.init.zeros_(layer.bias)
+        nn.init.orthogonal_(self.layer6.weight, gain=gain)
+        nn.init.zeros_(self.layer6.bias)
+
     def re_init_head(self):
-        self.layer5.weight.data = torch.zeros(50 * self.grid_size**2, 50 * self.grid_size**2).to(cm.DEVICE)
-        self.layer5.bias.data = torch.zeros(50 * self.grid_size**2).to(cm.DEVICE)
-        self.layer6.weight.data = torch.zeros(self.out_dim, 50 * self.grid_size**2).to(cm.DEVICE)
-        self.layer6.bias.data = torch.zeros(self.out_dim).to(cm.DEVICE)
+        nn.init.kaiming_uniform_(self.layer5.weight, nonlinearity='relu')
+        nn.init.zeros_(self.layer5.bias)
+        nn.init.orthogonal_(self.layer6.weight, gain=1)
+        nn.init.zeros_(self.layer6.bias)
+
+
+def create_fc_state_vector_mult_proc(observation, size, n_envs):
+    '''Convert Observation output from environmnet into a state variable for regular NN
+       with parallelization onto cpu cores.'''
+
+    state_vector = torch.zeros(5, size, size, n_envs).to(cm.DEVICE)
+    state_vector[0] =  torch.from_numpy(observation['agent']).to(cm.DEVICE).T
+    state_vector[1] =  torch.from_numpy(observation['target']).to(cm.DEVICE).T
+    state_vector[2] =  torch.from_numpy(observation['coins']).to(cm.DEVICE).T
+    state_vector[3] =  torch.from_numpy(observation['traps']).to(cm.DEVICE).T
+    state_vector[4] =  torch.from_numpy(observation['walls']).to(cm.DEVICE).T
+    state_vector = torch.reshape(state_vector, (5 * size * size, n_envs))
+    return state_vector.T
 
 
 def create_maze_state(observation, size):
-    '''Convert observation value of maze environment to state vector'''
+    '''Convert observation value of maze environment to state vector for singular environment'''
     state_vector = torch.zeros(5, size, size).to(cm.DEVICE)
     state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
 
