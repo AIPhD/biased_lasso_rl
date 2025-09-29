@@ -3,9 +3,9 @@ import config as c
 import models as m
 import evaluation as e
 from cartpole_project import training_cartpole as tc
-from maze_project import training_maze as tm
+from maze_project import training_maze_old as tm
 from maze_project import rl_maze as rlm
-from atari_project import training_atari as ta
+from atari_project import training_atari_old as ta
 
 
 
