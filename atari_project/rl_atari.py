@@ -8,23 +8,24 @@ import torch.nn.functional as f
 from collections import deque, namedtuple
 import gymnasium as gym
 import random
+from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
 from stable_baselines3.common.vec_env import SubprocVecEnv
 sys.path.append("/home/steven/biased_lasso_rl/gym-examples/")
 import gym_examples
-from maze_project import config_maze as cm
-from maze_project import task_dict
+from atari_project import config_atari as ca
+from atari_project import atari_dict
 import helper_functions as hf
 
 
-class MazeA2CLearning():
-    '''A2C Agent for different maze tasks, with optional transfer learning.'''
+class AtariA2CLearning():
+    '''A2C Agent for different Atari tasks, with optional transfer learning.'''
 
     def __init__(self, game_name, gamma=0.99, epsilon=0.9, eps_min=0.05, eps_decay=500, lamb_lasso=0.1, learning_rate=1e-4,
-                 batch_size=20, time_steps=10000, grid_size=7, n_envs = 16,
+                 batch_size=20, time_steps=10000, grid_size=7, n_envs = 16, frame_skip=4,
                  stochastic=True, source_network=None, transfer=None):
         '''Initialize the DQN agent with environment and hyperparameters.'''
 
-        self.game = task_dict.GAME_TASKS[game_name]
+        self.game = atari_dict.ATARI_GAMES[game_name]
         self.gamma = gamma
         self.epsilon = epsilon
         self.eps_min = eps_min
@@ -38,16 +39,23 @@ class MazeA2CLearning():
         self.source_network = source_network
         self.transfer = transfer
         self.n_envs = n_envs
+        self.frame_skip = frame_skip
 
 
     def make_env(self, seed, game):
         def _init():
-            '''Helper function to create multiple environments for parallel processing.'''
-            env = gym.make('gym_examples/GridWorld-v0',
-                            game=game,
-                            render_mode='rgb_array',
-                            size=self.grid_size)
-            env = gym.wrappers.TimeLimit(env, max_episode_steps=250)
+            env = gym.make(game,
+                           render_mode='rgb_array',
+                           frameskip=1)
+            env = AtariPreprocessing(env,
+                                     noop_max=30,
+                                     frame_skip=self.frame_skip,
+                                     screen_size=84,
+                                     terminal_on_life_loss=False,
+                                     grayscale_obs=True,
+                                     grayscale_newaxis=False,
+                                     scale_obs=False)
+            env = FrameStackObservation(env, 4)
             env.reset(seed=seed)
             return env
         return _init
@@ -61,23 +69,23 @@ class MazeA2CLearning():
         no_actions = vec_env.action_space.n
 
         if self.source_network is not None:
-            actor = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            actor = AtariNetwork(self.grid_size, no_actions).to(ca.DEVICE)
             actor.load_state_dict(torch.load(self.source_network))
             actor.re_init_head()
 
         else:
-            actor = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            actor = AtariNetwork(no_actions).to(ca.DEVICE)
             actor.initialize_network()
 
-        critic = MazeNetwork(self.grid_size, 1).to(cm.DEVICE)    
+        critic = AtariNetwork(1).to(ca.DEVICE)    
         critic.initialize_network()
         obs = vec_env.reset()
-        state = create_fc_state_vector_mult_proc(obs, size=self.grid_size, n_envs=self.n_envs)
+        state = create_conv_state_vector_mult_proc(obs, self.n_envs)
         sample = []
 
         for i in range(self.time_steps):
             vec_env.render()
-            model_output = actor(state).to(cm.DEVICE)
+            model_output = actor(state).to(ca.DEVICE)
             actions = self.select_action(model_output, self.epsilon)
             self.epsilon = max(self.epsilon - i*(self.epsilon-self.eps_min)/self.eps_decay, self.eps_min)
             next_obs, reward, term, trunc = vec_env.step(actions)
@@ -85,10 +93,10 @@ class MazeA2CLearning():
             for i in range(self.n_envs):
 
                 if trunc[i]['TimeLimit.truncated'] or bool(term[i]):
-                    next_state = create_maze_state(trunc[i]['terminal_observation'], self.grid_size)
+                    next_state = create_conv_state_vector(trunc[i]['terminal_observation'])
 
                 else:
-                    next_state = create_fc_state_vector_mult_proc(next_obs, self.grid_size, self.n_envs)[i]                
+                    next_state = create_conv_state_vector_mult_proc(next_obs,  self.n_envs)[i]
 
                     sample.append(hf.Transition(state[i],
                                                 actions[i],
@@ -96,7 +104,7 @@ class MazeA2CLearning():
                                                 reward[i],
                                                 term[i]))
 
-            state = create_fc_state_vector_mult_proc(next_obs, self.grid_size, self.n_envs)
+            state = create_conv_state_vector_mult_proc(next_obs,  self.n_envs)
 
             if ((i+1) % self.batch_size) == 0:
                 self.optimize_model(actor, critic, sample)
@@ -164,15 +172,15 @@ class MazeA2CLearning():
         actor_optimizer.zero_grad()
 
 
-class MazeDQNLearning():
-    '''DQN Agent for different maze tasks, with optional transfer learning.'''
+class AtariDQNLearning():
+    '''DQN Agent for different Atari games, with optional transfer learning.'''
 
     def __init__(self, game_name, gamma=0.99, epsilon=0.9, eps_min=0.05, eps_decay=5000, lamb_lasso=0.1, learning_rate=1e-4,
                  update_target=1000, batch_size=20, time_steps=10000, capacity=2000, grid_size=7,
                  stochastic=True, source_network=None, transfer=None):
         '''Initialize the DQN agent with environment and hyperparameters.'''
 
-        self.game = task_dict.GAME_TASKS[game_name]
+        self.game = atari_dict.ATARI_GAMES[game_name]
         self.gamma = gamma
         self.epsilon = epsilon
         self.eps_min = eps_min
@@ -191,34 +199,34 @@ class MazeDQNLearning():
     def train_agent(self):
         '''Simulate environment and train the agent.'''
 
-        env = gym.make('gym_examples/GridWorld-v0', game=self.game, render_mode='rgb_array')
+        env = gym.make(self.game, render_mode='rgb_array')
         no_actions = env.action_space.n
 
         if self.source_network is not None:
-            model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            model = AtariNetwork(no_actions).to(ca.DEVICE)
             model.load_state_dict(torch.load(self.source_network))
-            target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            target = AtariNetwork(no_actions).to(ca.DEVICE)
             target.load_state_dict(torch.load(self.source_network))
             model.re_init_head()
             target.re_init_head()
 
         else:
-            model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
-            target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            model = AtariNetwork(no_actions).to(ca.DEVICE)
+            target = AtariNetwork(no_actions).to(ca.DEVICE)
             model.initialize_network()
             target.initialize_network()
 
         obs, _ = env.reset()
-        state = create_maze_state(obs, self.grid_size)
+        state = create_conv_state_vector(obs)
 
         for i in range(self.time_steps):
             env.render()
-            model_output = model(state).to(cm.DEVICE)
+            model_output = model(state).to(ca.DEVICE)
             action = self.select_action(model_output, self.epsilon)
             self.epsilon = max(self.epsilon - i*(self.epsilon-self.eps_min)/self.eps_decay, self.eps_min)
             next_obs, reward, term, trunc, _ = env.step(action)
             print(reward)
-            next_state = create_maze_state(next_obs, self.grid_size)
+            next_state = create_conv_state_vector(next_obs)
             self.memory.append(hf.Transition(state, action, next_state, reward, int(term)))
             state = next_state
 
@@ -231,7 +239,7 @@ class MazeDQNLearning():
 
             if term or trunc:
                 obs, _ = env.reset()
-                state = create_maze_state(obs, self.grid_size)
+                state = create_conv_state_vector(obs)
         
         env.close()
             
@@ -282,15 +290,15 @@ class MazeDQNLearning():
         optimizer.zero_grad()
 
 
-class MazeDDQNLearning():
-    '''Double DQN Agent for different maze tasks, with optional transfer learning.'''
+class AtariDDQNLearning():
+    '''Double DQN Agent for different Atari tasks, with optional transfer learning.'''
 
     def __init__(self, game_name, gamma=0.99, epsilon=1, eps_min=0.05, eps_decay=5000, random_phase=1000, lamb_lasso=0.1,
                  learning_rate=1e-4, batch_size=256, target_update=100, tau=1, time_steps=20000, capacity=10000, grid_size=5,
                  stochastic=False, source_network=None, transfer=None):
         '''Initialize the Double DQN agent with environment and hyperparameters.'''
 
-        self.game = task_dict.GAME_TASKS[game_name]
+        self.game = atari_dict.ATARI_GAMES[game_name]
         self.gamma = gamma
         self.epsilon = epsilon
         self.eps_min = eps_min
@@ -311,30 +319,30 @@ class MazeDDQNLearning():
     def train_agent(self):
         '''Simulate environment and train the agent.'''
 
-        env = gym.make('gym_examples/GridWorld-v0', game=self.game,
-                       render_mode='rgb_array', size=self.grid_size)
+        env = gym.make(game=self.game,
+                       render_mode='rgb_array')
         no_actions = env.action_space.n
 
         if self.source_network is not None:
-            model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            model = AtariNetwork(no_actions).to(ca.DEVICE)
             model.load_state_dict(torch.load(self.source_network))
-            target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            target = AtariNetwork(no_actions).to(ca.DEVICE)
             target.load_state_dict(torch.load(self.source_network))
             model.re_init_head()
             target.re_init_head()
 
         else:
-            model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
-            target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            model = AtariNetwork(no_actions).to(ca.DEVICE)
+            target = AtariNetwork(no_actions).to(ca.DEVICE)
             model.initialize_network()
             target.initialize_network()
 
         obs, _ = env.reset()
-        state = create_maze_state(obs, self.grid_size)
+        state = create_conv_state_vector(obs)
 
         for i in range(self.time_steps):
             env.render()
-            model_output = model(state).to(cm.DEVICE)
+            model_output = model(state).to(ca.DEVICE)
             action = self.select_action(model_output, self.epsilon)
             next_obs, reward, term, trunc, _ = env.step(action)
             print(action, reward)
@@ -342,7 +350,7 @@ class MazeDDQNLearning():
             if i > self.random_phase:
                 self.epsilon = max(self.epsilon - i*(self.epsilon-self.eps_min)/self.eps_decay, self.eps_min)
 
-            next_state = create_maze_state(next_obs, self.grid_size)
+            next_state = create_conv_state_vector(next_obs)
             self.memory.append(hf.Transition(state, action, next_state, reward, int(term)))
             state = next_state
 
@@ -355,7 +363,7 @@ class MazeDDQNLearning():
 
             if term or trunc:
                 obs, _ = env.reset()
-                state = create_maze_state(obs, self.grid_size)
+                state = create_conv_state_vector(obs)
         
         env.close()
             
@@ -404,81 +412,88 @@ class MazeDDQNLearning():
         optimizer.zero_grad()
 
 
-class MazePPOLearning():
+class AtariPPOLearning():
     pass
 
-class MazeNetwork(nn.Module):
-    '''Deep Q-Network Architecture.'''
+class AtariNetwork(nn.Module):
+    '''Convolutional Net structure for Atari game environments'''
 
-    def __init__(self, grid_size, out_dim):
+    def __init__(self, num_actions):
 
         super().__init__()
-        self.out_dim = out_dim
-        self.layer1 = nn.Linear(grid_size**2*5, 50 * grid_size**2)
-        self.layer2 = nn.Linear(50 * grid_size**2, 50 * grid_size**2)
-        self.layer3 = nn.Linear(50 * grid_size**2, 50 * grid_size**2)
-        self.layer4 = nn.Linear(50 * grid_size**2, 50 * grid_size**2)
-        self.layer5 = nn.Linear(50 * grid_size**2, 50 * grid_size**2)
-        self.layer6 = nn.Linear(50 * grid_size**2, out_dim)
-        self.layerres1 = nn.Linear(grid_size**2*5, out_dim)
-        self.grid_size = grid_size
-        self.transfer_layers = ['layer1.weight', 'layer2.weight', 'layer3.weight', 'layer4.weight',
-                                'layer1.bias', 'layer2.bias', 'layer3.bias', 'layer4.bias',
-                                'layerres1.weight', 'layerres1.bias']
-    
+        self.firstlayer = nn.Conv2d(4, 32, kernel_size=8, stride=4)
+        self.secondlayer = nn.Conv2d(32, 64, kernel_size=4, stride=2)
+        self.thirdlayer = nn.Conv2d(64, 64, kernel_size=3, stride=1)
+        self.fourthlayer = nn.Linear(3136, 1600)
+        self.fifthlayer = nn.Linear(1600, 256)
+        self.sixthlayer = nn.Linear(256, num_actions)
+        self.num_actions = num_actions
+        self.transfer_kernels = ['firstlayer.weight',
+                                 'secondlayer.weight',
+                                 'thirdlayer.weight']
+        self.transfer_bias = ['firstlayer.bias',
+                              'secondlayer.weight',
+                              'thirdlayer.bias',
+                              'fourthlayer.bias']
+        self.transfer_linear = ['fourthlayer.weight']
+
     def forward(self, x_input):
-        x = f.relu(self.layer1(x_input))
-        x = f.relu(self.layer2(x))
-        x = f.relu(self.layer3(x))
-        x = f.relu(self.layer4(x))
-        x = f.relu(self.layer5(x))
-        x = self.layer6(x) + self.layerres1(x_input)
-        return x
+        '''Calculates output of the network given data x_input'''
 
-    def initialize_network(self, gain=1):
-        for layer in [self.layer1, self.layer2, self.layer3, self.layer4, self.layer5]:
-            nn.init.kaiming_uniform_(layer.weight, nonlinearity='relu')
-            nn.init.zeros_(layer.bias)
-        nn.init.orthogonal_(self.layer6.weight, gain=gain)
-        nn.init.zeros_(self.layer6.bias)
-
+        x_input = self.firstlayer(x_input)
+        x_input = nn.functional.relu(x_input)
+        x_input = self.secondlayer(x_input)
+        x_input = nn.functional.relu(x_input)
+        x_input = self.thirdlayer(x_input)
+        x_input = nn.functional.relu(x_input)
+        x_input = torch.flatten(x_input, start_dim=1)
+        x_input = self.fourthlayer(x_input)
+        x_input = nn.functional.relu(x_input)
+        x_input = self.fifthlayer(x_input)
+        x_input = nn.functional.relu(x_input)
+        y_output = self.sixthlayer(x_input)
+        return y_output
+    
+    def initialize_network(self):
+        torch.nn.init.kaiming_uniform_(self.firstlayer.weight, nonlinearity='relu')
+        torch.nn.init.zeros_(self.firstlayer.bias)
+        torch.nn.init.kaiming_uniform_(self.secondlayer.weight, nonlinearity='relu')
+        torch.nn.init.zeros_(self.secondlayer.bias)
+        torch.nn.init.kaiming_uniform_(self.thirdlayer.weight, nonlinearity='relu')
+        torch.nn.init.zeros_(self.thirdlayer.bias)
+        torch.nn.init.kaiming_uniform_(self.fourthlayer.weight, nonlinearity='relu')
+        torch.nn.init.zeros_(self.fourthlayer.bias)
+        torch.nn.init.kaiming_uniform_(self.fifthlayer.weight, nonlinearity='relu')
+        torch.nn.init.zeros_(self.fifthlayer.bias)
+        torch.nn.init.xavier_uniform_(self.sixthlayer.weight)
+        torch.nn.init.zeros_(self.sixthlayer.bias)
+    
     def re_init_head(self):
-        nn.init.kaiming_uniform_(self.layer5.weight, nonlinearity='relu')
-        nn.init.zeros_(self.layer5.bias)
-        nn.init.orthogonal_(self.layer6.weight, gain=1)
-        nn.init.zeros_(self.layer6.bias)
+        torch.nn.init.kaiming_uniform_(self.fifthlayer.weight, nonlinearity='relu')
+        torch.nn.init.zeros_(self.fifthlayer.bias)
+        torch.nn.init.xavier_uniform_(self.sixthlayer.weight)
+        torch.nn.init.zeros_(self.sixthlayer.bias)
+
+    def copy_layers(self, source_model_dict):
+        for key in source_model_dict:
+            try:
+                self.state_dict()[key] = source_model_dict[key]
+            except:
+                print('incompatible_layer')
 
 
-def create_fc_state_vector_mult_proc(observation, size, n_envs):
-    '''Convert Observation output from environmnet into a state variable for regular NN
-       with parallelization onto cpu cores.'''
+def create_conv_state_vector(observation):
+    '''Convert Observation output from environmnet into a state variable for convolutional NN.'''
 
-    state_vector = torch.zeros(5, size, size, n_envs).to(cm.DEVICE)
-    state_vector[0] =  torch.from_numpy(observation['agent']).to(cm.DEVICE).T
-    state_vector[1] =  torch.from_numpy(observation['target']).to(cm.DEVICE).T
-    state_vector[2] =  torch.from_numpy(observation['coins']).to(cm.DEVICE).T
-    state_vector[3] =  torch.from_numpy(observation['traps']).to(cm.DEVICE).T
-    state_vector[4] =  torch.from_numpy(observation['walls']).to(cm.DEVICE).T
-    state_vector = torch.reshape(state_vector, (5 * size * size, n_envs))
-    return state_vector.T
+    state_vector = torch.zeros(1, 4, 84, 84).to(ca.DEVICE)
+    state_vector[0] = torch.from_numpy(np.reshape(observation, (4, 84, 84)))
+    return state_vector
 
-def create_maze_state(observation, size):
-    '''Convert observation value of maze environment to state vector for singular environment'''
-    state_vector = torch.zeros(5, size, size).to(cm.DEVICE)
-    state_vector[0, observation['agent'][0], observation['agent'][1]] = 1
 
-    for target in observation['target']:
-        state_vector[1, target[0], target[1]] = 1
+def create_conv_state_vector_mult_proc(observations, n_envs):
+    '''Convert Observation output from environmnet into a state variable for convolutional NN.'''
 
-    for coin in observation['coins']:
-        state_vector[2, coin[0], coin[1]] = 1
-
-    for trap in observation['traps']:
-        state_vector[3, trap[0], trap[1]] = 1
-
-    for wall in observation['walls']:
-        state_vector[4, wall[0], wall[1]] = 1
-
-    state_vector = torch.flatten(state_vector)
-
+    state_vector = torch.zeros(n_envs, 4, 84, 84).to(ca.DEVICE)
+    for i in range(n_envs):
+        state_vector[i] = torch.from_numpy(np.reshape(observations[i], (4, 84, 84)))
     return state_vector

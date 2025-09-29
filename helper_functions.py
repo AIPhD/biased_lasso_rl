@@ -6,6 +6,7 @@ import gymnasium as gym
 
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward', 'terminated'))
 
+
 def network_param_difference(target_net, source_net):
     '''Calculates difference between two networks' parameters for biased regularization'''
 
@@ -21,7 +22,9 @@ def network_param_difference(target_net, source_net):
 
 
 def biased_lasso_regularization(target_net, source_net):
-
+    '''Calculates the l1 norm of the difference between two networks' parameters for biased regularization
+       and groups by layer defined in target_net.transfer_layers or by individual weights.
+    '''
     l1_reg = None
 
     for name, param in network_param_difference(target_net, source_net):
@@ -38,7 +41,7 @@ def biased_lasso_regularization(target_net, source_net):
 
 
 def create_batches(sample):
-
+    '''Create batches from a list of transitions using named tuples.'''
     batch = Transition(*zip(*sample))
     states = torch.stack(batch.state).to(c.DEVICE)
     actions = torch.tensor(batch.action).to(c.DEVICE)
@@ -49,7 +52,7 @@ def create_batches(sample):
 
 
 def calculate_q_target_batch(term_batch, critic, reward_batch, last_state, batch_size, n_envs=1, gamma=0.9):
-    '''Calculate the q value for the batch of states and rewards.'''
+    '''Calculate the q value for the batch of states and rewards for actor-critic based algorithms.'''
 
     q_values = torch.zeros(len(term_batch)).to(c.DEVICE)
 
@@ -63,4 +66,5 @@ def calculate_q_target_batch(term_batch, critic, reward_batch, last_state, batch
 
 
 def import_json(file):
+    '''Import json file as dictionary. Useful for loading hyperparameters in dockerized settings.'''
     pass
