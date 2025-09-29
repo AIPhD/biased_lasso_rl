@@ -48,14 +48,14 @@ def create_batches(sample):
     return states, actions, next_states, rewards, term_bools
 
 
-def calculate_q_target_batch(term_batch, critic, reward_batch, last_state, n_envs=1, gamma=0.9):
+def calculate_q_target_batch(term_batch, critic, reward_batch, last_state, batch_size, n_envs=1, gamma=0.9):
     '''Calculate the q value for the batch of states and rewards.'''
 
     q_values = torch.zeros(len(term_batch)).to(c.DEVICE)
 
     for i in range(n_envs):
         big_r = term_batch[-n_envs + i]*critic(last_state)[i]
-        for j in range(0, len(term_batch)//n_envs):
+        for j in range(0, batch_size):
             big_r = gamma*term_batch[(-j-1)*n_envs + i]*big_r + reward_batch[(-j-1)*n_envs + i]
             q_values[(-j-1)*n_envs + i] = big_r
 

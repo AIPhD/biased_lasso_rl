@@ -77,13 +77,14 @@ class MazeA2CLearning():
 
         for i in range(self.time_steps):
             vec_env.render()
-            model_output = actor(torch.from_numpy(state)).to(cm.DEVICE)
-            actions = self.select_action(model_output, self.epsilon, stochastic=True)
+            model_output = actor(state).to(cm.DEVICE)
+            actions = self.select_action(model_output, self.epsilon)
             self.epsilon = max(self.epsilon - i*(self.epsilon-self.eps_min)/self.eps_decay, self.eps_min)
-            next_obs, reward, term, trunc, _ = vec_env.step(actions)
+            next_obs, reward, term, trunc = vec_env.step(actions)
             next_state = create_fc_state_vector_mult_proc(next_obs, size=self.grid_size, n_envs=self.n_envs)
 
             for i in range(self.n_envs):
+                print(trunc)
                 sample.append(hf.Transition(state[i],
                                             actions[i],
                                             next_state[i],
@@ -92,10 +93,8 @@ class MazeA2CLearning():
 
             state = next_state
 
-            if term or trunc:
+            if ((i+1) % self.batch_size) == 0:
                 self.optimize_model(actor, critic, sample)
-                obs = vec_env.reset()
-                state = create_fc_state_vector_mult_proc(obs, size=self.grid_size, n_envs=self.n_envs)
                 sample = []
         
         vec_env.close()
@@ -106,12 +105,12 @@ class MazeA2CLearning():
         
         thresholds = np.random.sample(size=self.n_envs)
         actions = np.zeros(self.n_envs, dtype=int)
+
+        if torch.max(policy_output).isnan():
+                    print('Nan Value detected')
     
         for i in range(self.n_envs):
             if thresholds[i] > epsilon:
-
-                if torch.max(policy_output).isnan():
-                    print('Nan Value detected')
 
                 if self.stochastic:
                     probabilities = f.softmax(policy_output[i], dim=0)
@@ -140,7 +139,7 @@ class MazeA2CLearning():
         states, actions, next_states, rewards, term_bools = hf.create_batches(sample)
         critic_out = critic(states)
         critic_target = hf.calculate_q_target_batch(term_bools, critic, rewards, next_states[-self.n_envs:],
-                                                    self.n_envs, self.gamma)
+                                                    self.batch_size, self.n_envs, self.gamma)
         critic_loss = loss(critic_out, critic_target.detach())
         actor_loss = (f.log_softmax(actor(states),
                                     dim=1).gather(1, actions[:, 0])*(critic_target -

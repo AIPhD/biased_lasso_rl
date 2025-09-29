@@ -25,7 +25,7 @@ def main():
     # ddqn_sim_maze = rlm.MazeDDQNLearning('mazenavigating')
     # ddqn_sim_maze.train_agent()
 
-    a2c_sim_maze = rlm.MazeA2CLearning('mazenavigating', n_envs=16, transfer=None)
+    a2c_sim_maze = rlm.MazeA2CLearning('mazenavigating', n_envs=2, transfer=None)
     a2c_sim_maze.train_agent()
 
     # ta.train_a2c_baseline('SpaceInvaders')
