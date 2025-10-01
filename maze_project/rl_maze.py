@@ -21,9 +21,10 @@ class MazeA2CLearning():
 
     def __init__(self, game_name, gamma=0.99, epsilon=0.9, eps_min=0.05, eps_decay=500, lamb_lasso=0.1, learning_rate=1e-4,
                  batch_size=20, time_steps=10000, grid_size=7, n_envs = 16,
-                 stochastic=True, source_network=None, transfer=None):
+                 stochastic=True, source_name=None, model_dir='maze_project/saved_models/', data_dir='maze_project/data/'):
         '''Initialize the DQN agent with environment and hyperparameters.'''
 
+        self.game_name = game_name
         self.game = task_dict.GAME_TASKS[game_name]
         self.gamma = gamma
         self.epsilon = epsilon
@@ -35,9 +36,10 @@ class MazeA2CLearning():
         self.time_steps = time_steps
         self.grid_size = grid_size
         self.stochastic = stochastic
-        self.source_network = source_network
-        self.transfer = transfer
+        self.source_name = source_name
         self.n_envs = n_envs
+        self.model_dir = model_dir
+        self.data_dir = data_dir
 
 
     def make_env(self, seed, game):
@@ -60,20 +62,29 @@ class MazeA2CLearning():
         vec_env = SubprocVecEnv(env_fns)
         no_actions = vec_env.action_space.n
 
-        if self.source_network is not None:
+        if self.source_name is not None:
             actor = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
-            actor.load_state_dict(torch.load(self.source_network))
+            actor.load_state_dict(torch.load(self.model_dir + self.source_name + '_policy',
+                                             map_location=torch.device(cm.DEVICE)))
             actor.re_init_head()
+            source_network = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            source_network.load_state_dict(torch.load(self.model_dir + self.source_name + '_policy',
+                                                      map_location=torch.device(cm.DEVICE)))
+            source_network.eval()
+            for param in source_network.parameters():
+                param.requires_grad = False
 
         else:
             actor = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
             actor.initialize_network()
+            source_network = None
 
         critic = MazeNetwork(self.grid_size, 1).to(cm.DEVICE)    
         critic.initialize_network()
         obs = vec_env.reset()
         state = create_fc_state_vector_mult_proc(obs, size=self.grid_size, n_envs=self.n_envs)
         sample = []
+        rewards = []
 
         for i in range(self.time_steps):
             vec_env.render()
@@ -82,25 +93,33 @@ class MazeA2CLearning():
             self.epsilon = max(self.epsilon - i*(self.epsilon-self.eps_min)/self.eps_decay, self.eps_min)
             next_obs, reward, term, trunc = vec_env.step(actions)
 
-            for i in range(self.n_envs):
+            for j in range(self.n_envs):
 
-                if trunc[i]['TimeLimit.truncated'] or bool(term[i]):
-                    next_state = create_maze_state(trunc[i]['terminal_observation'], self.grid_size)
+                if trunc[j]['TimeLimit.truncated'] or bool(term[j]):
+                    next_state = create_maze_state(trunc[j]['terminal_observation'], self.grid_size)
 
                 else:
-                    next_state = create_fc_state_vector_mult_proc(next_obs, self.grid_size, self.n_envs)[i]                
+                    next_state = create_fc_state_vector_mult_proc(next_obs, self.grid_size, self.n_envs)[j]
 
-                    sample.append(hf.Transition(state[i],
-                                                actions[i],
-                                                next_state,
-                                                reward[i],
-                                                term[i]))
+                sample.append(hf.Transition(state[j],
+                                            actions[j],
+                                            next_state,
+                                            reward[j],
+                                            int(term[j])))
 
             state = create_fc_state_vector_mult_proc(next_obs, self.grid_size, self.n_envs)
+            rewards.append(reward)
+            mean_cumulative_rewards = np.cumsum(np.asarray(rewards), axis=0).mean(axis=1)
+            print(mean_cumulative_rewards[-1])
 
             if ((i+1) % self.batch_size) == 0:
-                self.optimize_model(actor, critic, sample)
+                self.optimize_model(actor, critic, source_network, sample)
                 sample = []
+            
+            if ((i + 1) % self.batch_size*10) == 0:
+                print('Saving Model and Rewards')
+                self.save_model(actor, critic)
+                self.save_rewards(mean_cumulative_rewards)
         
         vec_env.close()
             
@@ -129,7 +148,7 @@ class MazeA2CLearning():
         
         return actions
 
-    def optimize_model(self, actor, critic, sample):
+    def optimize_model(self, actor, critic, source, sample):
         '''Optimization step for A2C algorithm.'''
         
         loss = nn.MSELoss()
@@ -147,12 +166,12 @@ class MazeA2CLearning():
                                                     self.batch_size, self.n_envs, self.gamma)
         critic_loss = loss(critic_out, critic_target.detach())
         actor_loss = (f.log_softmax(actor(states),
-                                    dim=1).gather(1, actions[:, 0])*(critic_target -
-                                                                     critic_out(states)[:, 0]).detach()).mean()
+                                    dim=1).gather(1, actions[:, None])*(critic_target -
+                                                                     critic_out[:, 0]).detach()).mean()
         reg_param = 0
 
-        if self.transfer is not None and self.source_network is not None:
-            reg_param = hf.biased_lasso_regularization(actor, self.source_network)
+        if source is not None:
+            reg_param = hf.biased_lasso_regularization(actor, source)
 
 
         critic_loss += self.lamb_lasso*reg_param
@@ -162,6 +181,15 @@ class MazeA2CLearning():
         critic_optimizer.zero_grad()
         actor_optimizer.step()
         actor_optimizer.zero_grad()
+    
+    def save_model(self, actor, critic):
+        '''Save models to a specified filename.'''
+        torch.save(actor.state_dict(), self.model_dir + self.game_name + '_a2c_policy')
+        torch.save(critic.state_dict(), self.model_dir + self.game_name + '_a2c_value')
+    
+    def save_rewards(self, rewards):
+        '''Save the rewards to a specified filename.'''
+        np.save(self.data_dir + self.game_name + f'_source_{self.source_name}_lamb_{self.lamb_lasso}_rewards_a2c', rewards)
 
 
 class MazeDQNLearning():
@@ -169,9 +197,10 @@ class MazeDQNLearning():
 
     def __init__(self, game_name, gamma=0.99, epsilon=0.9, eps_min=0.05, eps_decay=5000, lamb_lasso=0.1, learning_rate=1e-4,
                  update_target=1000, batch_size=20, time_steps=10000, capacity=2000, grid_size=7,
-                 stochastic=True, source_network=None, transfer=None):
+                 stochastic=True, source_name=None, model_dir='maze_project/saved_models/', data_dir='maze_project/data/'):
         '''Initialize the DQN agent with environment and hyperparameters.'''
 
+        self.game_name = game_name
         self.game = task_dict.GAME_TASKS[game_name]
         self.gamma = gamma
         self.epsilon = epsilon
@@ -184,9 +213,10 @@ class MazeDQNLearning():
         self.time_steps = time_steps
         self.grid_size = grid_size
         self.stochastic = stochastic
-        self.source_network = source_network
-        self.transfer = transfer
+        self.source_name = source_name
         self.memory = deque([], maxlen=capacity)
+        self.model_dir = model_dir
+        self.data_dir = data_dir
 
     def train_agent(self):
         '''Simulate environment and train the agent.'''
@@ -194,22 +224,32 @@ class MazeDQNLearning():
         env = gym.make('gym_examples/GridWorld-v0', game=self.game, render_mode='rgb_array')
         no_actions = env.action_space.n
 
-        if self.source_network is not None:
+        if self.source_name is not None:
             model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
-            model.load_state_dict(torch.load(self.source_network))
+            model.load_state_dict(torch.load(self.model_dir + self.source_name + '_dqnetwork',
+                                             map_location=torch.device(cm.DEVICE)))
             target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
-            target.load_state_dict(torch.load(self.source_network))
+            target.load_state_dict(torch.load(self.model_dir + self.source_name + '_dqnetwork',
+                                              map_location=torch.device(cm.DEVICE)))
             model.re_init_head()
             target.re_init_head()
+            source = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            source.load_state_dict(torch.load(self.model_dir + self.source_name + '_dqnetwork',
+                                              map_location=torch.device(cm.DEVICE)))
+            source.eval()
+            for param in source.parameters():
+                param.requires_grad = False
 
         else:
             model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
             target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
             model.initialize_network()
             target.initialize_network()
+            source = None
 
         obs, _ = env.reset()
         state = create_maze_state(obs, self.grid_size)
+        rewards = []
 
         for i in range(self.time_steps):
             env.render()
@@ -218,6 +258,8 @@ class MazeDQNLearning():
             self.epsilon = max(self.epsilon - i*(self.epsilon-self.eps_min)/self.eps_decay, self.eps_min)
             next_obs, reward, term, trunc, _ = env.step(action)
             print(reward)
+            rewards.append(reward)
+            cumulative_rewards = np.cumsum(np.asarray(rewards))
             next_state = create_maze_state(next_obs, self.grid_size)
             self.memory.append(hf.Transition(state, action, next_state, reward, int(term)))
             state = next_state
@@ -228,6 +270,10 @@ class MazeDQNLearning():
             if (i % self.update_target) == 0:
                 for key in model.state_dict():
                     target.state_dict()[key] = model.state_dict()[key]
+            
+            if (i % self.batch_size*10) == 0:
+                self.save_model(model)
+                self.save_rewards(cumulative_rewards)
 
             if term or trunc:
                 obs, _ = env.reset()
@@ -257,7 +303,8 @@ class MazeDQNLearning():
 
     def optimize_model(self,
                        model,
-                       target):
+                       target,
+                       source=None):
         '''Optimization step for DQN algorithm.'''
         
         loss = nn.MSELoss()
@@ -272,14 +319,22 @@ class MazeDQNLearning():
         total_loss = loss(q_output, target_batch.detach())
         reg_param = 0
 
-        if self.transfer is not None and self.source_network is not None:
-            reg_param = hf.biased_lasso_regularization(model, self.source_network)
+        if source is not None:
+            reg_param = hf.biased_lasso_regularization(model, source)
 
 
         total_loss += self.lamb_lasso * reg_param
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
+    
+    def save_model(self, network):
+        '''Save models to a specified filename.'''
+        torch.save(network.state_dict(), self.model_dir + self.game_name + '_dqn_network')
+    
+    def save_rewards(self, rewards):
+        '''Save the rewards to a specified filename.'''
+        np.save(self.data_dir + self.game_name + f'_source_{self.source_name}_lamb_{self.lamb_lasso}_rewards_dqn', rewards)
 
 
 class MazeDDQNLearning():
@@ -287,9 +342,10 @@ class MazeDDQNLearning():
 
     def __init__(self, game_name, gamma=0.99, epsilon=1, eps_min=0.05, eps_decay=5000, random_phase=1000, lamb_lasso=0.1,
                  learning_rate=1e-4, batch_size=256, target_update=100, tau=1, time_steps=20000, capacity=10000, grid_size=5,
-                 stochastic=False, source_network=None, transfer=None):
+                 stochastic=False, source_name=None, model_dir='maze_project/saved_models/', data_dir='maze_project/data/'):
         '''Initialize the Double DQN agent with environment and hyperparameters.'''
 
+        self.game_name = game_name
         self.game = task_dict.GAME_TASKS[game_name]
         self.gamma = gamma
         self.epsilon = epsilon
@@ -304,9 +360,10 @@ class MazeDDQNLearning():
         self.time_steps = time_steps
         self.grid_size = grid_size
         self.stochastic = stochastic
-        self.source_network = source_network
-        self.transfer = transfer
+        self.source_name = source_name
         self.memory = deque([], maxlen=capacity)
+        self.model_dir = model_dir
+        self.data_dir = data_dir
 
     def train_agent(self):
         '''Simulate environment and train the agent.'''
@@ -314,23 +371,33 @@ class MazeDDQNLearning():
         env = gym.make('gym_examples/GridWorld-v0', game=self.game,
                        render_mode='rgb_array', size=self.grid_size)
         no_actions = env.action_space.n
-
-        if self.source_network is not None:
+        
+        if self.source_name is not None:
             model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
-            model.load_state_dict(torch.load(self.source_network))
+            model.load_state_dict(torch.load(self.model_dir + self.source_name + '_ddqnetwork',
+                                             map_location=torch.device(cm.DEVICE)))
             target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
-            target.load_state_dict(torch.load(self.source_network))
+            target.load_state_dict(torch.load(self.model_dir + self.source_name + '_ddqnetwork',
+                                              map_location=torch.device(cm.DEVICE)))
             model.re_init_head()
             target.re_init_head()
+            source = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
+            source.load_state_dict(torch.load(self.model_dir + self.source_name + '_ddqnetwork',
+                                              map_location=torch.device(cm.DEVICE)))
+            source.eval()
+            for param in source.parameters():
+                param.requires_grad = False
 
         else:
             model = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
             target = MazeNetwork(self.grid_size, no_actions).to(cm.DEVICE)
             model.initialize_network()
             target.initialize_network()
+            source = None
 
         obs, _ = env.reset()
         state = create_maze_state(obs, self.grid_size)
+        rewards = []
 
         for i in range(self.time_steps):
             env.render()
@@ -338,6 +405,8 @@ class MazeDDQNLearning():
             action = self.select_action(model_output, self.epsilon)
             next_obs, reward, term, trunc, _ = env.step(action)
             print(action, reward)
+            rewards.append(reward)
+            cumulative_rewards = np.cumsum(np.asarray(rewards))
 
             if i > self.random_phase:
                 self.epsilon = max(self.epsilon - i*(self.epsilon-self.eps_min)/self.eps_decay, self.eps_min)
@@ -347,11 +416,15 @@ class MazeDDQNLearning():
             state = next_state
 
             if i > self.batch_size:
-                self.optimize_model(model, target)
+                self.optimize_model(model, target, source)
 
             if (i % self.target_update) == 0:
                 for key in model.state_dict():
                     target.state_dict()[key] = self.tau*model.state_dict()[key] + (1-self.tau)*target.state_dict()[key]
+            
+            if (i % self.batch_size*10) == 0:
+                self.save_model(model)
+                self.save_rewards(cumulative_rewards)
 
             if term or trunc:
                 obs, _ = env.reset()
@@ -379,7 +452,7 @@ class MazeDDQNLearning():
         
         return action
 
-    def optimize_model(self, model, target):
+    def optimize_model(self, model, target, source=None):
         '''Optimization step for Double DQN algorithm.'''
         
         loss = nn.MSELoss()
@@ -394,14 +467,22 @@ class MazeDDQNLearning():
         total_loss = loss(q_output, target_batch.detach())
         reg_param = 0
 
-        if self.transfer is not None and self.source_network is not None:
-            reg_param = hf.biased_lasso_regularization(model, self.source_network)
+        if source is not None:
+            reg_param = hf.biased_lasso_regularization(model, source)
 
 
         total_loss += self.lamb_lasso * reg_param
         total_loss.backward()
         optimizer.step()
         optimizer.zero_grad()
+    
+    def save_model(self, network):
+        '''Save models to a specified filename.'''
+        torch.save(network.state_dict(), self.model_dir + self.game_name + '_ddqn_network')
+    
+    def save_rewards(self, rewards):
+        '''Save the rewards to a specified filename.'''
+        np.save(self.data_dir + self.game_name + f'_source_{self.source_name}_lamb_{self.lamb_lasso}_rewards_ddqn', rewards)
 
 
 class MazePPOLearning():
