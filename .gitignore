@@ -9,3 +9,4 @@ batch_script.sh
 stdout.txt
 /maze_project/saved_models
 /atari_project/saved_models
+Dockerfile

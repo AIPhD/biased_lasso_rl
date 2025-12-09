@@ -20,7 +20,7 @@ class MazeA2CLearning():
     '''A2C Agent for different maze tasks, with optional transfer learning.'''
 
     def __init__(self, game_name, gamma=0.99, epsilon=0.9, eps_min=0.05, eps_decay=500, lamb_lasso=0.1, learning_rate=1e-4,
-                 batch_size=20, time_steps=10000, grid_size=7, n_envs = 16,
+                 batch_size=20, time_steps=10000, grid_size=7, n_envs=16,
                  stochastic=True, source_name=None, model_dir='maze_project/saved_models/', data_dir='maze_project/data/'):
         '''Initialize the DQN agent with environment and hyperparameters.'''
 
@@ -109,17 +109,18 @@ class MazeA2CLearning():
 
             state = create_fc_state_vector_mult_proc(next_obs, self.grid_size, self.n_envs)
             rewards.append(reward)
-            mean_cumulative_rewards = np.cumsum(np.asarray(rewards), axis=0).mean(axis=1)
-            print(mean_cumulative_rewards[-1])
 
             if ((i+1) % self.batch_size) == 0:
                 self.optimize_model(actor, critic, source_network, sample)
+                mean_cumulative_reward = np.sum(np.asarray(rewards), axis=0).mean()
+                print(mean_cumulative_reward)
+                rewards = []
                 sample = []
             
             if ((i + 1) % self.batch_size*10) == 0:
                 print('Saving Model and Rewards')
                 self.save_model(actor, critic)
-                self.save_rewards(mean_cumulative_rewards)
+                # self.save_rewards(mean_cumulative_reward)
         
         vec_env.close()
             
@@ -164,10 +165,10 @@ class MazeA2CLearning():
         critic_out = critic(states)
         critic_target = hf.calculate_q_target_batch(term_bools, critic, rewards, next_states[-self.n_envs:],
                                                     self.batch_size, self.n_envs, self.gamma)
-        critic_loss = loss(critic_out, critic_target.detach())
-        actor_loss = (f.log_softmax(actor(states),
-                                    dim=1).gather(1, actions[:, None])*(critic_target -
-                                                                     critic_out[:, 0]).detach()).mean()
+        critic_loss = loss(critic_out[:, 0], critic_target.detach())
+        actor_loss = (-f.log_softmax(actor(states),
+                                     dim=1).gather(1, actions[:, None])*(critic_target -
+                                                                         critic_out[:, 0]).detach()).mean()
         reg_param = 0
 
         if source is not None:

@@ -3,7 +3,7 @@ import torch
 
 
 DEVICE = (
-    "cuda"
+    "cpu"
     if torch.cuda.is_available()
     else "cpu"
     # if torch.backends.mps.is_available()

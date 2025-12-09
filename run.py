@@ -21,7 +21,7 @@ def main():
     # ddqn_sim_maze = rlm.MazeDDQNLearning('mazenavigating')
     # ddqn_sim_maze.train_agent()
 
-    a2c_sim_maze = rlm.MazeA2CLearning('mazenavigating', n_envs=16)
+    a2c_sim_maze = rlm.MazeA2CLearning('pathfinding', n_envs=8, batch_size=36)
     a2c_sim_maze.train_agent()
 
     # a2c_sim_atari = rla.AtariA2CLearning('Centipede', n_envs=n_envs)
